@@ -429,6 +429,41 @@ async def api_vision_caption(payload: dict):
     return await _vision_call(payload, "caption")
 
 
+# ── Modo LOCAL: ASR (HF router) + LLM con tools (HF router) + TTS (edge-tts) ─
+@app.post("/api/local/turn")
+async def api_local_turn(payload: dict):
+    import base64 as _b64
+    import time as _t
+    import local_pipeline as LP
+
+    payload = payload or {}
+    persona = payload.get("persona") or "default"
+    texto = (payload.get("text") or "").strip()
+    audio_b64 = payload.get("audio") or ""
+    t0 = _t.time()
+    transcript = None
+    try:
+        if audio_b64:
+            raw = _b64.b64decode(audio_b64)
+            transcript = await asyncio.to_thread(LP.transcribir, raw, "es")
+            texto = (transcript or "").strip()
+        if not texto:
+            return {"ok": False, "error": "No se entendió el audio o no hay texto."}
+        out = await asyncio.to_thread(LP.responder, texto, persona)
+        voz = LP.VOZ_PERSONA.get(persona, LP.VOZ_DEFECTO)
+        wav = await asyncio.to_thread(LP.sintetizar, out["reply"], voz)
+        return {
+            "ok": True,
+            "transcript": transcript,
+            "reply": out["reply"],
+            "tools": out["tools"],
+            "audio": _b64.b64encode(wav).decode() if wav else None,
+            "latency_ms": int((_t.time() - t0) * 1000),
+        }
+    except Exception as e:                                  # noqa: BLE001
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
 # ── Imágenes temporales para que el LLM pueda usarlas con las tools ─────────
 _VISION_IMAGES: dict[str, tuple[bytes, str]] = {}
 

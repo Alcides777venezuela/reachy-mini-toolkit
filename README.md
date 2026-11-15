@@ -311,6 +311,32 @@ Y las notas vía LLM:
 
 Verificación del lienzo: `python ui_canvas_check.py`.
 
+## 🔌 Modos de conexión (selector en la UI)
+
+| Modo | Motor | Sesión HF | Latencia | Cuándo usarlo |
+|---|---|---|---|---|
+| **☁️ HF realtime** | asignador + WebSocket de HF | sí (1 por conexión) | ~0.7 s al primer audio | voz premium, barge-in |
+| **💻 Local** | **Whisper** (ASR) + **Qwen3.8-27B** (LLM con tools, HF Router) + **edge-tts** (voz es-ES) | **no** | ~5–8 s por turno | sin límites de sesión, sin 429 |
+
+El modo local **no toca el asignador**, así que el `429 behavior_cooldown` no puede ocurrir.
+Todo va por HTTP con el token HF que ya tienes; no descarga modelos ni necesita GPU.
+
+**Prueba real (UI, navegador headless):**
+```text
+[1] modo: local | estado: modo local listo · Whisper + Qwen + edge-tts
+[3] respuesta: «En Madrid son las 00:43 del 16 de noviembre de 2026. Y un chiste:
+    ¿Qué le dice un bit a otro? ¡Nos vemos en el bus!» · 2 tool(s) · 6.99 s
+```
+
+**Prueba por API (texto y audio):**
+```text
+texto  → tools=['hora_en','dado']        reply: «En Tokio son las 08:41… 🎲 ha salido un 3»   (6.4 s)
+audio  → STT «apunta una nota… hola mundo» · tool=escribir_nota · nota guardada              (31.9 s)
+```
+
+Verificación: `python ui_local_check.py`. Endpoint: `POST /api/local/turn`
+(`{text}` o `{audio}` base64 → `{transcript, reply, tools, audio, latency_ms}`).
+
 ## 🚦 Error 429 del asignador de sesiones (rate limit de HF)
 
 El endpoint `pollen-robotics-reachy-mini-realtime-url.hf.space/session` limita por
