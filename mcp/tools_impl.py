@@ -18,6 +18,7 @@ import operator
 import os
 import pathlib
 import random
+import re
 import urllib.parse
 import urllib.request
 from datetime import datetime
@@ -729,6 +730,74 @@ def clasificacion(liga: str = "laliga") -> str:
     return f"Clasificación {nombre}:\n" + "\n".join(lineas)
 
 
+# ── 23-26. Escritura: notas y documentos ───────────────────────────────────
+_NOTAS_DIR = pathlib.Path(
+    os.getenv("REACHY_NOTAS_DIR") or (pathlib.Path.home() / "reachy_notas")
+)
+
+
+def _slug_nota(titulo: str) -> str:
+    base = re.sub(r"[^A-Za-z0-9 _-]", "", str(titulo or "")).strip().replace(" ", "_")
+    return (base[:60] or "nota").strip("_") or "nota"
+
+
+def escribir_nota(titulo: str, contenido: str) -> str:
+    """Escribe una nota/documento en disco y devuelve la ruta.
+
+    Ej: titulo="Ideas para la robot", contenido="1) bailes nuevos…"
+    """
+    titulo = str(titulo or "").strip() or "nota_sin_titulo"
+    contenido = str(contenido or "").strip()
+    if not contenido:
+        return "Necesito el contenido de la nota."
+    try:
+        _NOTAS_DIR.mkdir(parents=True, exist_ok=True)
+        ruta = _NOTAS_DIR / f"{_slug_nota(titulo)}.md"
+        ruta.write_text(f"# {titulo}\n\n{contenido}\n", encoding="utf-8")
+        return f"Nota guardada: {ruta} ({len(contenido)} caracteres)"
+    except Exception as e:                                  # noqa: BLE001
+        return f"No pude escribir la nota ({type(e).__name__})."
+
+
+def leer_nota(titulo: str) -> str:
+    """Lee una nota guardada por su título."""
+    ruta = _NOTAS_DIR / f"{_slug_nota(titulo)}.md"
+    if not ruta.is_file():
+        existentes = sorted(p.stem for p in _NOTAS_DIR.glob("*.md")) if _NOTAS_DIR.is_dir() else []
+        return "No existe esa nota." + (f" Disponibles: {', '.join(existentes)}" if existentes else "")
+    try:
+        return ruta.read_text(encoding="utf-8")[:4000]
+    except Exception as e:                                  # noqa: BLE001
+        return f"No pude leer la nota ({type(e).__name__})."
+
+
+def listar_notas() -> str:
+    """Lista las notas guardadas (nombre, tamaño y fecha)."""
+    if not _NOTAS_DIR.is_dir():
+        return "Todavía no hay notas guardadas."
+    items = sorted(_NOTAS_DIR.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if not items:
+        return "Todavía no hay notas guardadas."
+    lineas = []
+    for p in items[:15]:
+        st = p.stat()
+        fecha = datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M")
+        lineas.append(f"• {p.stem} — {st.st_size} B — {fecha}")
+    return f"Notas guardadas ({len(items)}):\n" + "\n".join(lineas)
+
+
+def borrar_nota(titulo: str) -> str:
+    """Borra una nota guardada por su título."""
+    ruta = _NOTAS_DIR / f"{_slug_nota(titulo)}.md"
+    if not ruta.is_file():
+        return "No existe esa nota."
+    try:
+        ruta.unlink()
+        return f"Nota borrada: {ruta.name}"
+    except Exception as e:                                  # noqa: BLE001
+        return f"No pude borrar la nota ({type(e).__name__})."
+
+
 # ── Registro MCP: metadata + despacho + argumentos ──────────────────────────
 def _schema(props: dict | None = None, required: list[str] | None = None) -> dict:
     s = {"type": "object", "properties": props or {}}
@@ -797,6 +866,16 @@ TOOLS = [
     {"name": "clasificacion", "description": "Clasificación de una liga de fútbol (ESPN): "
      "laliga, premier, seriea, bundesliga, ligue1, mls.",
      "inputSchema": _schema({"liga": {"type": "string", "default": "laliga"}})},
+    {"name": "escribir_nota", "description": "Escribe una nota/documento en disco (markdown) y "
+     "devuelve la ruta. Úsala cuando el usuario pida apuntar, guardar o redactar algo.",
+     "inputSchema": _schema({"titulo": {"type": "string"}, "contenido": {"type": "string"}},
+                            ["titulo", "contenido"])},
+    {"name": "leer_nota", "description": "Lee una nota guardada por su título.",
+     "inputSchema": _schema({"titulo": {"type": "string"}}, ["titulo"])},
+    {"name": "listar_notas", "description": "Lista las notas guardadas con tamaño y fecha.",
+     "inputSchema": _schema()},
+    {"name": "borrar_nota", "description": "Borra una nota guardada por su título.",
+     "inputSchema": _schema({"titulo": {"type": "string"}}, ["titulo"])},
 ]
 
 # argumentos posicionales por función (nombre, default) — para el puente HTTP
@@ -823,6 +902,10 @@ ARGS_MAP = {
     "foto_mascota": [("animal", "perro")],
     "leer_web": [("url", "")],
     "clasificacion": [("liga", "laliga")],
+    "escribir_nota": [("titulo", ""), ("contenido", "")],
+    "leer_nota": [("titulo", "")],
+    "listar_notas": [],
+    "borrar_nota": [("titulo", "")],
 }
 
 DISPATCH = {
@@ -848,6 +931,10 @@ DISPATCH = {
     "foto_mascota": foto_mascota,
     "leer_web": leer_web,
     "clasificacion": clasificacion,
+    "escribir_nota": escribir_nota,
+    "leer_nota": leer_nota,
+    "listar_notas": listar_notas,
+    "borrar_nota": borrar_nota,
 }
 
 

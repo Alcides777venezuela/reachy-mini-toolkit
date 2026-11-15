@@ -174,6 +174,27 @@ MCP_TOOLS = {
         "params": [("liga", "laliga")],
         "desc": "Clasificación de una liga de fútbol (laliga, premier, seriea…).",
     },
+    # ── Escritura (notas): vía puente local para que persistan en tu equipo ─
+    "reachy_mcp__escribir_nota": {
+        "base": "http://127.0.0.1:8091", "fn": "escribir_nota",
+        "params": [("titulo", ""), ("contenido", "")],
+        "desc": "Escribe una nota/documento en disco y devuelve la ruta.",
+    },
+    "reachy_mcp__leer_nota": {
+        "base": "http://127.0.0.1:8091", "fn": "leer_nota",
+        "params": [("titulo", "")],
+        "desc": "Lee una nota guardada por su título.",
+    },
+    "reachy_mcp__listar_notas": {
+        "base": "http://127.0.0.1:8091", "fn": "listar_notas",
+        "params": [],
+        "desc": "Lista las notas guardadas con tamaño y fecha.",
+    },
+    "reachy_mcp__borrar_nota": {
+        "base": "http://127.0.0.1:8091", "fn": "borrar_nota",
+        "params": [("titulo", "")],
+        "desc": "Borra una nota guardada por su título.",
+    },
 }
 
 # ── Tools PROPIAS de este proyecto (equivalente a un Tool Space propio) ──────

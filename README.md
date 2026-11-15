@@ -16,6 +16,7 @@ Consola web que habla con el **mismo backend realtime** que usa el robot Reachy 
   **2 tools propias** (`flip_coin`, `roll_dice`).
 - **🎤 Habla por micrófono**: PCM16 16 kHz al backend; STT + respuesta hablada en vivo.
 - **📷 Visión**: sube una imagen → descripción (VLM) + OCR vía HF Inference API.
+- **✍️ Escritura**: lienzo para escribir a mano (el robot lo lee) + tools de notas/documentos.
 - **Voz real**: TTS del backend (voz Aiden/Eric/Dylan…) → WAV en el navegador.
 - **UI en vivo**: transcripciones, badges de cada tool call, latencia del primer audio.
 
@@ -81,7 +82,7 @@ instructions). Aparece sola en el selector de la UI.
 **Space publicado:** <https://huggingface.co/spaces/Alcides777/reachy-mcp-tool>
 **Endpoint MCP:** `https://alcides777-reachy-mcp-tool.hf.space/gradio_api/mcp/schema`
 
-**22 herramientas MCP** (todas sin API key), con datos en vivo y **visión**:
+**26 herramientas MCP** (todas sin API key), con datos en vivo, **visión** y **escritura**:
 
 | Tool | Qué hace | Fuente |
 |---|---|---|
@@ -98,9 +99,13 @@ instructions). Aparece sola en el selector de la UI.
 | `receta(plato)` | Ingredientes y pasos | TheMealDB |
 | `foto_mascota(animal)` | URL de foto de perro/gato | Dog CEO / Cataas |
 | `leer_web(url)` | Texto visible de una web | HTTP directo |
-| **`ocr_imagen(imagen)`** | Transcribe el texto de una imagen | VLM (Qwen3.8-27B) |
-| **`describir_imagen(imagen)`** | Describe una imagen | VLM |
-| **`preguntar_imagen(imagen, pregunta)`** | VQA sobre la imagen | VLM |
+| `ocr_imagen(imagen)` | Transcribe el texto de una imagen | VLM (Qwen3.8-27B) |
+| `describir_imagen(imagen)` | Describe una imagen | VLM |
+| `preguntar_imagen(imagen, pregunta)` | VQA sobre la imagen | VLM |
+| **`escribir_nota(titulo, contenido)`** | Escribe una nota en disco | local |
+| **`leer_nota(titulo)`** | Lee una nota | local |
+| **`listar_notas()`** | Lista notas con fecha/tamaño | local |
+| **`borrar_nota(titulo)`** | Borra una nota | local |
 | `calculadora(expresion)` | Aritmética segura (AST) | local |
 | `convertir_unidades(valor, desde, hacia)` | C°/F°/K°, km/mi, kg/lb, l/gal | local |
 | `hora_en(zona)` | Hora en zona IANA | local (tzdata) |
@@ -274,6 +279,37 @@ Assistant transcript: Hello there! What can I help you with today?
 
 > En mockup el daemon avisa de que no encuentra la tarjeta de audio del robot
 > (`No Reachy Mini Audio USB device found`) y usa el audio por defecto: es normal.
+
+## ✍️ Escritura: lienzo a mano + notas
+
+Además de 🎤 voz y 📷 imagen, la consola tiene **✍️ escritura**:
+
+**1) Lienzo a mano** — pulsas ✍️, escribes con el ratón/dedo y el robot lo lee con su tool de OCR
+(la imagen se sube a `/api/vision/upload` y el LLM recibe la URL).
+
+**2) Tools de notas** — el asistente puede **escribir, leer, listar y borrar** notas en disco
+(`~/reachy_notas/*.md`), útiles para "apunta esto", "léeme lo que apunté", etc.
+
+Prueba real (navegador headless, CDP):
+
+```text
+[1] consola: lista · default · Aiden
+[2] panel abierto: True
+[4] pixeles con tinta: 28168
+[5] enviado; esperando respuesta del LLM…
+[6] respuesta: «El texto dice: "Reachy 2026, voz + vision + escritura".» · 1 tool(s) · 1er audio 3.22s
+```
+
+Y las notas vía LLM:
+
+```text
+→ «Apunta una nota titulada 'Pruebas robot' con el contenido: voz, visión y escritura funcionan.»
+🛠️ escribir_nota {"titulo":"Pruebas robot","contenido":"voz, visión y escritura funcionan"}
+    ↳ Nota guardada: C:\Users\Alcides\reachy_notas\Pruebas_robot.md
+🔊 «Listo! Ya he guardado la nota Pruebas robot.»
+```
+
+Verificación del lienzo: `python ui_canvas_check.py`.
 
 ## ⏰ Mantenimiento (keepalive)
 
