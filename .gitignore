@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Generados por los tests
+salida_*.wav
+*.pcm
+*.mp3
+
+# Sistema
+.DS_Store
+Thumbs.db

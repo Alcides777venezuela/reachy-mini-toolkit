@@ -1,0 +1,17 @@
+# Reachy Mini Toolkit — consola web + MCP de 22 tools
+
+Dependencias del proyecto (consola + MCP + Space):
+
+```bash
+pip install fastapi uvicorn httpx openai websockets huggingface_hub tzdata
+# opcional, para pruebas de audio por voz:
+pip install edge-tts pillow
+```
+
+- `fastapi`, `uvicorn` — consola web
+- `httpx` — llamadas HTTP a los Spaces / APIs
+- `openai` — cliente realtime (SDK oficial)
+- `websockets` — WS de la consola y chequeos
+- `huggingface_hub` — publicar el Space
+- `tzdata` — zonas horarias en Windows
+- `edge-tts` — sintetizar voz para `test_audio.py` (requiere ffmpeg en PATH)
