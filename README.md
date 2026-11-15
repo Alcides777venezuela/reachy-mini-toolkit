@@ -311,6 +311,29 @@ Y las notas vía LLM:
 
 Verificación del lienzo: `python ui_canvas_check.py`.
 
+## 🚦 Error 429 del asignador de sesiones (rate limit de HF)
+
+El endpoint `pollen-robotics-reachy-mini-realtime-url.hf.space/session` limita por
+solicitante. Si se crean muchas sesiones (pruebas, reinicios, varias pestañas, app y
+consola a la vez) responde:
+
+```json
+{"detail":{"code":"requester_rate_limited","reason":"behavior_cooldown","retry_after_s":672}}
+```
+
+**Qué hace ahora la consola:**
+- Lee `retry_after_s` y guarda un **cooldown global** (no vuelve a llamar a HF hasta que expire)
+- Avisa en la UI con el tiempo de espera y **se reconecta sola** al terminar
+- Las pestañas que reconectan respetan el cooldown (no martillean)
+
+Comprobar: `python test_429.py` → la 2ª conexión responde en ~0 s sin llamar a HF.
+
+**Buenas prácticas para no provocarlo:**
+1. **Una sesión a la vez**: app del robot (7860) **o** consola (8090), no ambas
+2. No dejar varias pestañas abiertas reconectando
+3. No reiniciar los servicios en bucle (cada reinicio = nueva sesión)
+4. Si ya está limitado: esperar el `retry_after` (suele ser 2–12 min) y recargar
+
 ## ⏰ Mantenimiento (keepalive)
 
 El Space duerme tras 48 h sin tráfico (hardware gratis). Para que esté siempre listo:

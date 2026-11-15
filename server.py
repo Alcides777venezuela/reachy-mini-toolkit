@@ -433,6 +433,48 @@ async def api_vision_caption(payload: dict):
 _VISION_IMAGES: dict[str, tuple[bytes, str]] = {}
 
 
+# ── Control de rate limit del asignador de sesiones (429 behavior_cooldown) ──
+class RateLimited(Exception):
+    """El asignador de sesiones nos pidió esperar (429)."""
+
+    def __init__(self, retry_after: int):
+        super().__init__(f"rate limited, espera {retry_after}s")
+        self.retry_after = int(retry_after)
+
+
+_COOLDOWN_UNTIL = 0.0
+
+
+def _cooldown_restante() -> int:
+    import time as _t
+
+    return max(0, int(_COOLDOWN_UNTIL - _t.time()))
+
+
+def _allocate_guarded(token: str) -> dict:
+    """Asigna sesión respetando el cooldown global (no martillea el endpoint)."""
+    global _COOLDOWN_UNTIL
+    import time as _t
+
+    restante = _cooldown_restante()
+    if restante > 0:
+        raise RateLimited(restante)
+    try:
+        return allocate_session(token)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 429:
+            retry = 90
+            try:
+                retry = int(e.response.json()["detail"]["retry_after_s"])
+            except Exception:                               # noqa: BLE001
+                ra = e.response.headers.get("retry-after")
+                if ra and ra.isdigit():
+                    retry = int(ra)
+            _COOLDOWN_UNTIL = _t.time() + retry
+            raise RateLimited(retry) from e
+        raise
+
+
 @app.post("/api/vision/upload")
 async def api_vision_upload(payload: dict):
     import base64 as _b64
@@ -539,7 +581,20 @@ async def ws_chat(ws: WebSocket, personality: str = "default", voice: str | None
     try:
         await ws.send_json({"type": "status", "text": "Asignando sesión realtime…"})
         token = get_token()
-        alloc = await asyncio.to_thread(allocate_session, token)
+        try:
+            alloc = await asyncio.to_thread(_allocate_guarded, token)
+        except RateLimited as e:
+            minutos = max(1, round(e.retry_after / 60))
+            await ws.send_json({
+                "type": "rate_limited",
+                "retry_after": e.retry_after,
+                "message": (
+                    f"El servicio de sesiones de Hugging Face está limitando (429). "
+                    f"Espera ~{minutos} min y vuelve a intentar. "
+                    "Consejo: no tengas la app y la consola usando sesión a la vez."
+                ),
+            })
+            return
         base_url, ws_url, query = parse_connect_url(alloc["connect_url"])
         client = AsyncOpenAI(api_key=token, base_url=base_url, websocket_base_url=ws_url)
 

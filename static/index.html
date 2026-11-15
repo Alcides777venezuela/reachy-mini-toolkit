@@ -92,6 +92,7 @@
 <script>
 let ws = null, wsReady = false, busy = false, current = null;
 let reconnectTimer = null, closedByUs = false, reconnectTries = 0;
+let cooldownUntil = 0;   // cuando HF nos limita (429) esperamos sin martillear
 let micStream = null, micCtx = null, micProc = null, micSrc = null, micGain = null, recording = false;
 const $ = (id) => document.getElementById(id);
 const chat = $("chat");
@@ -174,7 +175,9 @@ function connect() {
 function scheduleReconnect() {
   clearTimeout(reconnectTimer);
   reconnectTries++;
-  const delay = Math.min(2000 * Math.min(reconnectTries, 5), 10000);
+  const base = Math.min(2000 * Math.min(reconnectTries, 5), 10000);
+  const restante = Math.max(0, cooldownUntil - Date.now());
+  const delay = Math.max(base, restante + 3000);
   reconnectTimer = setTimeout(() => { if (!closedByUs) connect(); }, delay);
 }
 
@@ -185,6 +188,17 @@ function onMsg(m) {
     $("send").disabled = false;
     setStatus("lista · " + m.personality + " · " + m.voice, "on");
     $("inp").focus();
+    return;
+  }
+  if (m.type === "rate_limited") {
+    const mins = Math.max(1, Math.round(m.retry_after / 60));
+    cooldownUntil = Date.now() + (m.retry_after + 5) * 1000;
+    addBubble("bot", "⏳ " + m.message);
+    $("lat").textContent = `Reintento automático en ~${mins} min`;
+    setStatus(`límite de HF (429) · espera ~${mins} min`, "err");
+    busy = true; $("send").disabled = true;
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(() => { if (!closedByUs) connect(); }, (m.retry_after + 5) * 1000);
     return;
   }
   if (m.type === "speech_started") { setStatus("🎙️ te escucho…", "on"); return; }
