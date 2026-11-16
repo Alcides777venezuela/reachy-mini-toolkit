@@ -1,9 +1,0 @@
-fastapi
-uvicorn
-httpx
-openai
-websockets
-huggingface_hub
-tzdata
-edge-tts
-piper-tts
