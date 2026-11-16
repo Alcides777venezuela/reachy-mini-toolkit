@@ -408,31 +408,39 @@ caliente**, caché, notas, tools, puente MCP y el Space publicado, y sugiere qu�
 
 ## ☁️ Desplegada en la web (Space Docker de Hugging Face)
 
-**Consola online:** <https://huggingface.co/spaces/Alcides777/reachy-web-console>
-**URL de la app:** `https://alcides777-reachy-web-console.hf.space` (privado: requiere sesión HF)
+**Consola online (pública):** <https://huggingface.co/spaces/Alcides777/reachy-web-console>
+**URL de la app:** **https://alcides777-reachy-web-console.hf.space**
+**Código de acceso:** `reachy2026` (se pide una vez; cookie de 30 días)
+
+Protegida con la variable `REACHY_ACCESS_CODE` del Space, para que la URL se pueda
+compartir sin dejar la cuota de inferencia abierta a cualquiera.
+
+```text
+GET  /                      → 200  (UI + pantalla de código)
+GET  /api/meta              → 401  (protegido)
+POST /api/login {…}         → 200  (set-cookie 30 días)
+GET  /api/meta (cookie)     → 200 · 33 tools
+POST /api/local/turn/stream → 200 · SSE
+login con código incorrecto → 401
+```
 
 Se despliega como **Space Docker** (`Dockerfile`, `app_port: 7860`) con el secret
 `HF_TOKEN` (Inference Providers) configurado. El contenedor:
 - instala `fastapi/uvicorn/openai/websockets/edge-tts/piper-tts` + `ffmpeg`
 - descarga los modelos **Piper** al arrancar (ES + EN) y calienta la caché TTS
 - sirve la misma UI (voz · visión · escritura · barge-in) y los modos HF/local
+- **arranca en modo local** (sin asignador de HF → sin 429)
 
-Prueba real desde la web (Space recién desplegado):
+Prueba real desde la web:
 
 ```text
-[1] GET /              → 200 · UI servida
-[2] /api/meta          → 33 tools
-[3] /api/local/cache   → {"archivos":6,"mb":0.31,...}
-[4] turno local (SSE):
-    🛠️ hora_en · 🛠️ chiste
-    🔊 1ª frase a 1215 ms: «Son las 10:38 en Tokio.»
-    ✅ total 1327 ms · 1er audio 1215 ms
+🛠️ hora_en · 🛠️ chiste
+🔊 1ª frase a 1215 ms: «Son las 10:38 en Tokio.»
+✅ total 1327 ms · 1er audio 1215 ms
 ```
 
 Verificación: `python test_web_space.py` (usa el token de tu caché).
 
-**Para compartir la URL con otras personas** hay que hacer el Space **público**
-(Settings → Change visibility). Nota: usa tu cuota de Inference con el token del secret.
 Alternativa sin Space: `cloudflared tunnel --url http://127.0.0.1:8090` (rápido, pero
 necesita tu PC encendido).
 
