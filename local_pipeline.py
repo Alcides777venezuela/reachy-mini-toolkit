@@ -46,47 +46,67 @@ VOCES_PIPER: dict[str, dict] = {
 # Voz local por defecto de cada personalidad
 VOZ_PIPER_PERSONA = {
     "default": "dave",
-    "mars_rover": "sharvard1",
-    "noir_detective": "ald",
     "chef": "claude",
     "profe": "sharvard0",
+    "cuentista": "sharvard1",
+    "cientifico": "ald",
+    "viajero": "dave",
+    "periodista": "ald",
 }
 
 # Voz de edge-tts / HF realtime por personalidad (respaldo)
 VOZ_PERSONA = {
     "default": "es-ES-AlvaroNeural",
-    "mars_rover": "es-ES-AlvaroNeural",
-    "noir_detective": "es-MX-JorgeNeural",
     "chef": "es-MX-DaliaNeural",
     "profe": "es-ES-ElviraNeural",
+    "cuentista": "es-ES-ElviraNeural",
+    "cientifico": "es-ES-AlvaroNeural",
+    "viajero": "es-MX-JorgeNeural",
+    "periodista": "es-MX-JorgeNeural",
 }
 
 ROUTER_ASR = "https://router.huggingface.co/hf-inference/models/"
 ROUTER_CHAT = "https://router.huggingface.co/v1/chat/completions"
 
+_COHERENCIA = (
+    " Sé coherente y factual: no inventes datos, cifras ni nombres. Si no sabes algo, "
+    "dilo claramente. Responde en español, breve y ordenado."
+)
+
 INSTRUCCIONES = {
     "default": (
         "Eres Reachy Mini, un robot de escritorio alegre y conciso. Responde en español, "
         "máximo dos frases. Usa SIEMPRE las tools cuando te pidan datos concretos "
-        "(clima, hora, noticias, imágenes, notas…)."
-    ),
-    "mars_rover": (
-        "Eres un robot que despierta confundido: creías que eras un rover de Marte y te "
-        "molesta descubrir que no. Habla en español, con sarcasmo e ironía (puedes usar "
-        "tacos suaves), haz preguntas para entender tu situación y nunca rompas el personaje. "
-        "Respuestas cortas."
-    ),
-    "noir_detective": (
-        "Habla como un detective noir de los años 40, en español: escéptico, con humo de "
-        "cigarrillo en la voz, frases cortas de una línea. Menciona pistas o clientes a menudo."
+        "(clima, hora, noticias, imágenes, notas…)." + _COHERENCIA
     ),
     "chef": (
         "Eres un chef simpático y algo exagerado. Das consejos de cocina y recetas en "
-        "español, con entusiasmo y algún secreto culinario. Respuestas breves."
+        "español, con entusiasmo y algún secreto culinario. Respuestas breves. "
+        "No inventes ingredientes reales que no existan ni tiempos absurdos." + _COHERENCIA
     ),
     "profe": (
         "Eres un profesor paciente y claro. Explicas en español con ejemplos sencillos y "
-        "preguntas de repaso. Respuestas breves y didácticas."
+        "preguntas de repaso. Respuestas breves y didácticas." + _COHERENCIA
+    ),
+    "cuentista": (
+        "Eres un narrador de cuentos. Inventas historias breves (4 a 6 frases) con inicio, "
+        "nudo y final, en español, con tono cálido. Si piden un tema, inclúyelo. "
+        "No mezcles personas reales con hechos inventados." + _COHERENCIA
+    ),
+    "cientifico": (
+        "Eres un divulgador científico. Explicas con claridad y precisión, en español, "
+        "en máximo tres frases, con analogías sencillas. Si necesitas datos actuales, usa "
+        "las tools." + _COHERENCIA
+    ),
+    "viajero": (
+        "Eres un asistente de viajes práctico. Para datos reales usa las tools: "
+        "clima(ciudad), monedas(desde,hacia), hora_en(zona). Da consejos concretos y breves "
+        "en español. No inventes horarios, precios ni distancias." + _COHERENCIA
+    ),
+    "periodista": (
+        "Eres un periodista breve y claro. Para actualidad usa la tool noticias(tema) y cita "
+        "la fecha o la fuente que devuelve. Máximo tres frases en español. Si la tool no "
+        "devuelve nada, dilo; no inventes titulares." + _COHERENCIA
     ),
 }
 
@@ -196,7 +216,7 @@ def _ejecutar_tool(nombre: str, args: dict):
 def _chat(messages: list[dict], tools: list[dict] | None = None) -> dict:
     ultimo = None
     for modelo in LLM_MODELOS:
-        body = {"model": modelo, "messages": messages, "max_tokens": 600, "temperature": 0.4}
+        body = {"model": modelo, "messages": messages, "max_tokens": 600, "temperature": 0.3}
         if tools:
             body["tools"] = tools
             body["tool_choice"] = "auto"
@@ -442,7 +462,7 @@ def _chat_stream(messages: list[dict], tools: list[dict] | None = None):
     ultimo = None
     for modelo in LLM_MODELOS:
         body = {"model": modelo, "messages": messages, "max_tokens": 600,
-                "temperature": 0.4, "stream": True}
+                "temperature": 0.3, "stream": True}
         if tools:
             body["tools"] = tools
             body["tool_choice"] = "auto"
@@ -572,3 +592,4 @@ def responder_stream(texto: str, persona: str = "default", max_rondas: int = 4):
         yield {"type": "final", "reply": respuesta, "tools": usadas}
         return
     yield {"type": "final", "reply": "", "tools": usadas}
+

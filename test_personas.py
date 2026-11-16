@@ -18,10 +18,12 @@ import httpx
 BASE = "http://127.0.0.1:8090"
 PREGUNTAS = {
     "default": "Preséntate en una frase.",
-    "mars_rover": "¿Qué eres y dónde estamos?",
-    "noir_detective": "¿Quién eres, extraño?",
     "chef": "Dame un consejo rápido de cocina.",
     "profe": "Explícame en una frase qué es la fotosíntesis.",
+    "cuentista": "Cuéntame un cuento corto sobre un robot perdido.",
+    "cientifico": "¿Por qué el cielo es azul?",
+    "viajero": "¿Qué clima hace en Caracas y cuánto son 50 dólares en euros?",
+    "periodista": "Dame un titular de hoy sobre tecnología.",
 }
 
 
@@ -55,3 +57,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

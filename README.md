@@ -406,32 +406,36 @@ caliente**, caché, notas, tools, puente MCP y el Space publicado, y sugiere qu�
  12 comprobaciones · 1 fallos (app 7860 parada) · 18.9s
 ```
 
-## 🎭 Personalidades y voces (todas en español)
+## 🎭 Personalidades y voces (todas en español, coherentes)
 
 | Personalidad | Carácter | Voz local (Piper) |
 |---|---|---|
 | **default** | asistente alegre y conciso | Dave · España (hombre) |
-| **mars_rover** | robot confundido que creía ser rover de Marte, sarcástico | Sharvard B · España |
-| **noir_detective** | detective noir de los 40, frases de una línea | Aldo · México (hombre) |
 | **chef** | chef exagerado, consejos de cocina | Claude · México (mujer) |
 | **profe** | profesor paciente y claro | Sharvard A · España |
+| **cuentista** 🆕 | narrador de cuentos breves | Sharvard B · España |
+| **cientifico** 🆕 | divulgador preciso con analogías | Aldo · México (hombre) |
+| **viajero** 🆕 | planifica viajes usando clima/monedas/hora | Dave · España |
+| **periodista** 🆕 | titulares con fuente y fecha (tool `noticias`) | Aldo · México |
+
+> Las personalidades **mars_rover** y **noir_detective** se retiraron: su estilo tan
+> libre producía incoherencias. Todas las nuevas llevan la regla **«no inventes datos;
+> si no lo sabes, dilo»** y temperatura 0.3.
 
 **6 voces disponibles** en modo local (selector en la UI):
 `dave` (ES hombre) · `sharvard0` / `sharvard1` (ES, 2 hablantes) · `ald` (MX hombre) ·
 `claude` (MX mujer, calidad *high*) · `lessac` (inglés).
 
-- El selector de **Voz** cambia de opciones según el modo: voces **Piper** en local y
-  voces del backend (Aiden, Eric, Dylan…) en HF realtime.
-- Elegir personalidad fija su voz por defecto; puedes cambiarla a mano.
-
 Prueba real (`python test_personas.py`):
 
 ```text
-default         324696B  ¡Hola! Soy Reachy Mini, un robot de escritorio alegre y conciso…
-mars_rover      906124B  Supuestamente era un rover de Marte. Pero aquí no hay polvo rojo…
-noir_detective  787164B  Un viejo que lee el mundo como un expediente mal cerrado.
-chef           1066716B  ¡Ah, mi querido cocinillas! 🍳 Aquí va un consejo que vale oro…
-profe           687704B  La fotosíntesis es el proceso en el que las plantas usan la luz del sol…
+default     «¡Hola! Soy Reachy Mini, un robot de escritorio alegre…»
+chef        «Consejo de oro: sal la carne antes de que toque la sartén…»
+profe       «La fotosíntesis es el proceso por el cual las plantas convierten la luz…»
+cuentista   «Un pequeño robot de latón oxidado despertó un amanecer sin recordar…»
+cientifico  «El cielo es azul porque la luz del sol choca con las moléculas del aire…»
+viajero     tools=[clima, monedas] → «Caracas: niebla, 18.3 °C… 50 USD = 45.24 EUR»
+periodista  tools=[noticias] → titular real con fuente y fecha
 ```
 
 ## ☁️ Desplegada en la web (Space Docker de Hugging Face)
