@@ -436,6 +436,27 @@ Verificación: `python test_web_space.py` (usa el token de tu caché).
 Alternativa sin Space: `cloudflared tunnel --url http://127.0.0.1:8090` (rápido, pero
 necesita tu PC encendido).
 
+## 🔀 ¿Vercel u otro hosting? (y por qué el 429 no depende del hosting)
+
+El **429 `behavior_cooldown`** lo devuelve el **asignador de sesiones de Pollen**
+(`…realtime-url.hf.space/session`), no el hosting. Cambiar de host **no** lo arregla.
+Lo que sí lo evita es **no usar el asignador**: el modo **local**.
+
+> La consola web ahora **arranca en modo local por defecto** y recuerda tu elección
+> (`localStorage`), así que no consume sesiones de HF salvo que cambies a ☁️ HF realtime.
+
+| Opción | Sirve para esta app | Notas |
+|---|---|---|
+| **Hugging Face Space (actual)** | ✅ | Docker, WS, SSE, secretos, 48 h sleep + keepalive |
+| **Render / Railway / Fly.io** | ✅ | contenedores con Dolphinfile; WS y procesos largos OK; cuotas propias |
+| **VPS propio** (DigitalOcean, Hetzner…) | ✅ | control total, ~5 $/mes |
+| **Vercel** | ❌ para el backend | serverless: sin WebSocket persistente, funciones cortas, sin ffmpeg/onnxruntime/Piper; solo serviría la UI estática o APIs delgadas (proxy) |
+| **Netlify / GitHub Pages** | ❌ | solo estático host |
+| **Cloudflare Tunnel** desde tu PC | ⚠️ | rápido y gratis (`cloudflared tunnel --url http://127.0.0.1:8090`), pero depende de tu PC encendido |
+
+Para **voz premium sin el asignador**: OpenAI Realtime / Gemini Live (de pago) o
+auto-hospedar `huggingface/speech-to-speech` y conectar la consola al endpoint local.
+
 ## 🚦 Error 429 del asignador de sesiones (rate limit de HF)
 
 El endpoint `pollen-robotics-reachy-mini-realtime-url.hf.space/session` limita por

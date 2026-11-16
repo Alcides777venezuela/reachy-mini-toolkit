@@ -98,7 +98,8 @@
 let ws = null, wsReady = false, busy = false, current = null;
 let reconnectTimer = null, closedByUs = false, reconnectTries = 0;
 let cooldownUntil = 0;   // cuando HF nos limita (429) esperamos sin martillear
-let modo = "hf";         // "hf" = realtime de Hugging Face · "local" = Whisper+Qwen+edge-tts
+// El modo por defecto es LOCAL: no usa el asignador de sesiones de HF (sin 429).
+let modo = (localStorage.getItem("reachy_modo") || "local");
 let localChunks = [], localStream = null, localCtx = null, localProc = null, localGain = null, localRec = false;
 let micStream = null, micCtx = null, micProc = null, micSrc = null, micGain = null, recording = false;
 const $ = (id) => document.getElementById(id);
@@ -128,6 +129,7 @@ function sendWS(obj) {
 /* ── MODO ─────────────────────────────────────────────────── */
 function setMode(nuevo) {
   modo = nuevo;
+  try { localStorage.setItem("reachy_modo", modo); } catch (e) {}
   clearTimeout(reconnectTimer);
   if (modo === "local") {
     closedByUs = true;
@@ -614,7 +616,16 @@ $("sendDraw").onclick = async () => {
   sendText(`Lee lo que he escrito a mano en esta imagen y dime qué dice: ${up.url}`, "✍️ (escrito a mano)");
 };
 
-initMeta().then(connect).catch(() => { setStatus("no pude cargar la config", "err"); connect(); });
+initMeta().then(() => {
+  const sel = $("mode");
+  sel.value = modo;
+  if (modo === "local") {
+    setStatus("modo local listo · Whisper + Qwen + edge-tts", "on");
+    $("send").disabled = false;
+  } else {
+    connect();
+  }
+}).catch(() => { setStatus("no pude cargar la config", "err"); connect(); });
 </script>
 </body>
 </html>

@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reachy Mini · Web Console</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+<style>
+  :root{--bg:#0b0f14;--panel:#121923;--line:#1e2a38;--txt:#e6edf3;--dim:#8b9bb0;--acc:#4cc2ff;--ok:#2ecc71;--tool:#b48cff;--rec:#ff5252}
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.5 "Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--txt)}
+  header{display:flex;align-items:center;gap:12px;padding:12px 18px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;flex-wrap:wrap}
+  h1{font-size:15px;margin:0;font-weight:600;letter-spacing:.3px}
+  .dot{width:9px;height:9px;border-radius:50%;background:#666;display:inline-block;margin-right:6px;transition:background .3s}
+  .dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  .dot.err{background:#e74c3c}
+  select,.btn{background:#0e141c;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font:inherit;cursor:pointer}
+  .btn:hover{border-color:var(--acc)}
+  #chat{max-width:860px;margin:0 auto;padding:18px 14px 150px;display:flex;flex-direction:column;gap:12px}
+  .msg{max-width:78%;padding:10px 13px;border-radius:14px;white-space:pre-wrap;word-wrap:break-word;animation:fade .18s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  .user{align-self:flex-end;background:#173a5e;border:1px solid #24527f}
+  .bot{align-self:flex-start;background:var(--panel);border:1px solid var(--line)}
+  .bot .meta{margin-top:6px;font-size:11px;color:var(--dim)}
+  .tool{align-self:flex-start;margin:-6px 0 0 8px;font-size:12px;color:var(--tool);background:#1a1530;border:1px dashed #8a6cff;border-radius:10px;padding:6px 10px;max-width:80%;white-space:pre-wrap;word-break:break-word}
+  #bar{position:fixed;bottom:0;left:0;right:0;background:linear-gradient(transparent,var(--bg) 40%);padding:26px 14px 16px}
+  #form{max-width:860px;margin:0 auto;display:flex;gap:8px;align-items:center}
+  #inp{flex:1;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:#0e141c;color:var(--txt);font:inherit;outline:none}
+  #inp:focus{border-color:var(--acc)}
+  #send{padding:12px 20px;border-radius:12px;border:0;background:var(--acc);color:#04121c;font-weight:700;cursor:pointer}
+  #send:disabled{opacity:.45;cursor:not-allowed}
+  .icon{width:44px;height:44px;border-radius:12px;border:1px solid var(--line);background:#0e141c;color:var(--txt);font-size:19px;cursor:pointer;flex:0 0 auto}
+  .icon:hover{border-color:var(--acc)}
+  .icon.rec{background:#3a1218;border-color:var(--rec);box-shadow:0 0 14px rgba(255,82,82,.5);animation:pulse 1s infinite}
+  @keyframes pulse{50%{transform:scale(1.05)}}
+  .hint{max-width:860px;margin:4px auto 0;color:var(--dim);font-size:12px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+  .chip{font-size:11px;color:var(--dim);border:1px solid var(--line);border-radius:20px;padding:2px 9px}
+  /* Lienzo de escritura */
+  #drawPanel{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:30;padding:16px}
+  #drawPanel.on{display:flex}
+  #drawBox{background:#fff;border-radius:16px;padding:14px;width:min(94vw,780px);box-shadow:0 20px 60px rgba(0,0,0,.5)}
+  #drawTitle{color:#0b0f14;font-weight:700;margin:0 0 10px 2px;font-size:15px}
+  #canvas{width:100%;height:auto;display:block;border:2px dashed #9aa4b2;border-radius:10px;background:#fff;touch-action:none;cursor:crosshair}
+  #drawBtns{display:flex;gap:8px;margin-top:12px;justify-content:flex-end;flex-wrap:wrap}
+  .dbtn{padding:9px 16px;border-radius:10px;border:1px solid #cfd6df;background:#eef2f6;color:#0b0f14;font-weight:600;cursor:pointer;font:inherit}
+  .dbtn:hover{border-color:#4cc2ff}
+  .dbtn.primary{background:#4cc2ff;border-color:#4cc2ff;color:#04121c}
+</style>
+</head>
+<body>
+<header>
+  <h1>🤖 Reachy Mini · Web Console</h1>
+  <span><span id="dot" class="dot"></span><span id="status" style="color:#8b9bb0">conectando…</span></span>
+  <span style="flex:1"></span>
+  <select id="personality" title="Personalidad"></select>
+  <select id="voice" title="Voz"></select>
+  <select id="mode" title="Modo de conexión">
+    <option value="hf">☁️ HF realtime</option>
+    <option value="local">💻 Local (Whisper + Qwen + edge-tts)</option>
+  </select>
+  <button class="btn" id="reconnect">Reconectar</button>
+</header>
+
+<div id="chat">
+  <div class="bot msg">Hola, soy Reachy Mini. Escríbeme o pulsa el <b>🎤</b> para hablarme. También puedes subir una imagen con <b>📷</b>.
+    <span class="meta">Si ves «reconectando…», la consola se reconecta sola en 2 s.</span></div>
+</div>
+
+<div id="bar">
+  <form id="form" autocomplete="off">
+    <button type="button" class="icon" id="img" title="Subir imagen (OCR + descripción)">📷</button>
+    <input id="inp" placeholder="Escribe tu mensaje o usa el micrófono…" />
+    <button type="button" class="icon" id="draw" title="Escribir a mano (el robot lo lee)">✍️</button>
+    <button type="button" class="icon" id="mic" title="Pulsa para hablar, pulsa otra vez para parar">🎤</button>
+    <button type="button" class="icon" id="stop" title="Detener la voz (Esc)" style="display:none">⏹</button>
+    <button id="send" type="submit">Enviar</button>
+  </form>
+  <input type="file" id="file" accept="image/*" style="display:none">
+  <div class="hint">
+    <span id="lat"></span>
+    <span class="chip" id="tools"></span>
+  </div>
+</div>
+
+<div id="drawPanel">
+  <div id="drawBox">
+    <p id="drawTitle">✍️ Escribe a mano y el robot lo leerá</p>
+    <canvas id="canvas" width="1400" height="520"></canvas>
+    <div id="drawBtns">
+      <button type="button" class="dbtn" id="clearDraw">🧹 Borrar</button>
+      <button type="button" class="dbtn primary" id="sendDraw">📤 Enviar al robot</button>
+      <button type="button" class="dbtn" id="closeDraw">✖ Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let ws = null, wsReady = false, busy = false, current = null;
+let reconnectTimer = null, closedByUs = false, reconnectTries = 0;
+let cooldownUntil = 0;   // cuando HF nos limita (429) esperamos sin martillear
+// El modo por defecto es LOCAL: no usa el asignador de sesiones de HF (sin 429).
+let modo = (localStorage.getItem("reachy_modo") || "local");
+let localChunks = [], localStream = null, localCtx = null, localProc = null, localGain = null, localRec = false;
+let micStream = null, micCtx = null, micProc = null, micSrc = null, micGain = null, recording = false;
+const $ = (id) => document.getElementById(id);
+const chat = $("chat");
+
+/* ── helpers ─────────────────────────────────────────────── */
+function setStatus(txt, cls) { $("status").textContent = txt; $("dot").className = "dot " + (cls || ""); }
+function addBubble(who, text) {
+  const el = document.createElement("div");
+  el.className = "msg " + who;
+  if (text) el.textContent = text;
+  chat.appendChild(el); scrollDown();
+  return el;
+}
+function scrollDown() { window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }); }
+function b64FromBytes(bytes) {
+  let bin = "", CH = 0x8000;
+  for (let i = 0; i < bytes.length; i += CH) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+  return btoa(bin);
+}
+function sendWS(obj) {
+  if (!ws || ws.readyState !== 1) return false;
+  ws.send(JSON.stringify(obj));
+  return true;
+}
+
+/* ── MODO ─────────────────────────────────────────────────── */
+function setMode(nuevo) {
+  modo = nuevo;
+  try { localStorage.setItem("reachy_modo", modo); } catch (e) {}
+  clearTimeout(reconnectTimer);
+  if (modo === "local") {
+    closedByUs = true;
+    if (ws) { try { ws.close(); } catch (e) {} }
+    ws = null; wsReady = false; busy = false;
+    $("send").disabled = false;
+    $("reconnect").disabled = true;
+    setStatus("modo local listo · Whisper + Qwen + edge-tts", "on");
+    $("inp").focus();
+  } else {
+    $("reconnect").disabled = false;
+    closedByUs = false;
+    connect();
+  }
+}
+
+/* ── TURNO EN MODO LOCAL (streaming SSE + audio por frases) ── */
+let colaAudio = [], sonandoAudio = false, audioActual = null;
+function encolarAudio(b64) {
+  if (!b64) return;
+  colaAudio.push(b64);
+  if (!sonandoAudio) reproducirSiguiente();
+}
+function reproducirSiguiente() {
+  if (!colaAudio.length) { sonandoAudio = false; actualizarBotonParar(); return; }
+  sonandoAudio = true;
+  actualizarBotonParar();
+  audioActual = new Audio("data:audio/wav;base64," + colaAudio.shift());
+  audioActual.onended = reproducirSiguiente;
+  audioActual.play().catch(() => reproducirSiguiente());
+}
+/* Barge-in: corta la voz (botón ⏹, tecla Esc o al pulsar el micrófono) */
+function pararAudio() {
+  colaAudio = [];
+  sonandoAudio = false;
+  if (audioActual) { try { audioActual.pause(); } catch (e) {} audioActual = null; }
+  actualizarBotonParar();
+  addBubble("bot", "⏹ (interrumpido)");
+}
+function actualizarBotonParar() {
+  const b = $("stop"); if (b) b.style.display = sonandoAudio ? "inline-block" : "none";
+}
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") pararAudio(); });
+
+async function localTurn(payload) {
+  if (busy) { addBubble("bot", "⏳ Espera a que termine la respuesta anterior."); return; }
+  busy = true; $("send").disabled = true;
+  colaAudio = []; sonandoAudio = false;
+  setStatus(payload.audio ? "🎧 transcribiendo…" : "pensando (modo local)…", "");
+  let burbuja = null, texto = "", primero = null;
+  try {
+    const resp = await fetch("/api/local/turn/stream", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...payload, persona: $("personality").value || "default" }),
+    });
+    if (!resp.ok || !resp.body) { addBubble("bot", "⚠️ HTTP " + resp.status); return; }
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf("\n\n")) >= 0) {
+        const bloque = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        for (const linea of bloque.split("\n")) {
+          if (!linea.startsWith("data: ")) continue;
+          let m; try { m = JSON.parse(linea.slice(6)); } catch (e) { continue; }
+
+          if (m.type === "transcript") { addBubble("user", "🎤 " + m.text); }
+          else if (m.type === "audio" && m.audio) {
+            encolarAudio(m.audio);                        // frase de relleno (mientras corren las tools)
+            if (m.filler) { $("lat").textContent = "«" + m.filler + "»"; }
+          }
+          else if (m.type === "tool") {
+            const el = document.createElement("div");
+            el.className = "tool";
+            el.innerHTML = `<b>🛠️ ${m.name}</b>`;
+            chat.appendChild(el); scrollDown();
+          } else if (m.type === "sentence") {
+            if (!burbuja) burbuja = addBubble("bot", "");
+            texto += m.text + " ";
+            burbuja.textContent = texto.trim();
+            if (primero === null && m.t_ms != null) {
+              primero = m.t_ms;
+              $("lat").textContent = `modo local · primer audio ${(primero / 1000).toFixed(2)} s`;
+            }
+            encolarAudio(m.audio);
+            scrollDown();
+          } else if (m.type === "done") {
+            if (burbuja) {
+              const meta = document.createElement("span");
+              meta.className = "meta";
+              meta.textContent = ` · ${(m.tools || []).length} tool(s) · ${(m.latency_ms / 1000).toFixed(2)} s`
+                + (m.first_audio_ms ? ` · 1er audio ${(m.first_audio_ms / 1000).toFixed(2)} s` : "");
+              burbuja.appendChild(meta);
+            }
+            $("lat").textContent = `Modo local · total ${(m.latency_ms / 1000).toFixed(2)} s`
+              + (m.first_audio_ms ? ` · 1er audio ${(m.first_audio_ms / 1000).toFixed(2)} s` : "");
+            setStatus("modo local listo · Whisper + Qwen + edge-tts", "on");
+          } else if (m.type === "error") {
+            addBubble("bot", "⚠️ " + m.error);
+            setStatus("error en modo local", "err");
+          }
+        }
+      }
+    }
+  } catch (e) {
+    addBubble("bot", "⚠️ " + e);
+    setStatus("error en modo local", "err");
+  } finally {
+    busy = false; $("send").disabled = false;
+    scrollDown();
+  }
+}
+
+/* Envía texto según el modo activo */
+function sendText(texto, mostrar) {
+  if (mostrar !== false) addBubble("user", mostrar === undefined ? texto : mostrar);
+  current = null;
+  if (modo === "local") { localTurn({ text: texto }); return; }
+  if (!wsReady) { addBubble("bot", "⚠️ Aún no estoy conectado; reintenta en un segundo…"); connect(); return; }
+  if (busy) { addBubble("bot", "⏳ Espera a que termine la respuesta anterior."); return; }
+  busy = true; $("send").disabled = true;
+  sendWS({ type: "user_text", text: texto });
+}
+
+/* ── conexión con AUTO-RECONEXIÓN ────────────────────────── */
+async function initMeta() {
+  const m = await (await fetch("/api/meta")).json();
+  const p = $("personality"), v = $("voice");
+  m.personalities.forEach((x) => {
+    const o = document.createElement("option");
+    o.value = x.key; o.textContent = x.label;
+    p.appendChild(o);
+  });
+  ["Aiden","Ryan","Dylan","Eric","Ono_Anna","Serena","Sohee","Uncle_Fu","Vivian"].forEach((x) => {
+    const o = document.createElement("option");
+    o.value = x; o.textContent = "Voz: " + x;
+    v.appendChild(o);
+  });
+  p.onchange = () => { syncVoice(); connect(); };
+  v.onchange = connect;
+  const modeSel = $("mode");
+  modeSel.value = modo;
+  modeSel.onchange = () => setMode(modeSel.value);
+  syncVoice();
+  $("tools").textContent = m.tools.length + " tools";
+}
+function syncVoice() {
+  const p = $("personality").value;
+  fetch("/api/meta").then(r => r.json()).then(m => {
+    const per = m.personalities.find(x => x.key === p);
+    if (per) $("voice").value = per.voice;
+  });
+}
+
+function connect() {
+  if (modo === "local") { setStatus("modo local listo · Whisper + Qwen + edge-tts", "on"); return; }
+  clearTimeout(reconnectTimer);
+  if (ws) { closedByUs = true; try { ws.close(); } catch (e) {} }
+  closedByUs = false;
+  wsReady = false; busy = false;
+  $("send").disabled = true;
+  setStatus("conectando…", "");
+  const p = $("personality").value || "default";
+  const v = $("voice").value || "";
+  try {
+    ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/chat?personality=${encodeURIComponent(p)}&voice=${encodeURIComponent(v)}`);
+  } catch (e) {
+    setStatus("error de conexión", "err");
+    scheduleReconnect();
+    return;
+  }
+  ws.onopen = () => { reconnectTries = 0; setStatus("conectado, inicializando…", ""); };
+  ws.onmessage = (e) => { try { onMsg(JSON.parse(e.data)); } catch (err) { console.error(err); } };
+  ws.onclose = () => {
+    wsReady = false; busy = false;
+    $("send").disabled = false;
+    if (modo === "local") { setStatus("modo local listo · Whisper + Qwen + edge-tts", "on"); return; }
+    if (closedByUs) { setStatus("desconectado", "err"); return; }
+    setStatus("desconectado — reconectando…", "err");
+    scheduleReconnect();
+  };
+  ws.onerror = () => {};
+}
+function scheduleReconnect() {
+  clearTimeout(reconnectTimer);
+  reconnectTries++;
+  const base = Math.min(2000 * Math.min(reconnectTries, 5), 10000);
+  const restante = Math.max(0, cooldownUntil - Date.now());
+  const delay = Math.max(base, restante + 3000);
+  reconnectTimer = setTimeout(() => { if (!closedByUs) connect(); }, delay);
+}
+
+function onMsg(m) {
+  if (m.type === "status") { setStatus(m.text, ""); return; }
+  if (m.type === "ready") {
+    wsReady = true; busy = false;
+    $("send").disabled = false;
+    setStatus("lista · " + m.personality + " · " + m.voice, "on");
+    $("inp").focus();
+    return;
+  }
+  if (m.type === "rate_limited") {
+    const mins = Math.max(1, Math.round(m.retry_after / 60));
+    cooldownUntil = Date.now() + (m.retry_after + 5) * 1000;
+    addBubble("bot", "⏳ " + m.message);
+    $("lat").textContent = `Reintento automático en ~${mins} min`;
+    setStatus(`límite de HF (429) · espera ~${mins} min`, "err");
+    busy = true; $("send").disabled = true;
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(() => { if (!closedByUs) connect(); }, (m.retry_after + 5) * 1000);
+    return;
+  }
+  if (m.type === "speech_started") { setStatus("🎙️ te escucho…", "on"); return; }
+  if (m.type === "speech_stopped") { setStatus("procesando voz…", ""); return; }
+  if (m.type === "user_partial") {
+    let el = document.querySelector("#chat .user.partial");
+    if (!el) { el = addBubble("user"); el.classList.add("partial"); }
+    el.textContent = m.text + "…";
+    return;
+  }
+  if (m.type === "user_transcript") {
+    const el = document.querySelector("#chat .user.partial");
+    if (el) { el.textContent = m.text; el.classList.remove("partial"); }
+    else addBubble("user", m.text);
+    return;
+  }
+  if (m.type === "transcript_delta") {
+    if (!current) { current = addBubble("bot"); current.textContent = ""; }
+    current.textContent += m.text;
+    scrollDown();
+    return;
+  }
+  if (m.type === "tool_call") {
+    const el = document.createElement("div");
+    el.className = "tool";
+    el.innerHTML = `<b>🛠️ ${m.name.split("__").pop()}</b>\n${m.args}`;
+    chat.appendChild(el); scrollDown();
+    return;
+  }
+  if (m.type === "turn_done") {
+    if (!current && m.transcript) { current = addBubble("bot"); current.textContent = m.transcript; }
+    if (current) {
+      const meta = document.createElement("span");
+      meta.className = "meta";
+      meta.textContent = ` · ${m.tools.length} tool(s)` + (m.latency_s ? ` · 1er audio ${m.latency_s}s` : "");
+      current.appendChild(meta);
+    }
+    current = null;
+    if (m.audio) {
+      audioActual = new Audio("data:audio/wav;base64," + m.audio);
+      sonandoAudio = true; actualizarBotonParar();
+      audioActual.onended = () => { sonandoAudio = false; audioActual = null; actualizarBotonParar(); };
+      audioActual.play().catch(() => { sonandoAudio = false; actualizarBotonParar(); });
+    }
+    $("lat").textContent = m.latency_s ? `Latencia de audio: ${m.latency_s}s` : "";
+    busy = false; $("send").disabled = false;
+    scrollDown();
+    return;
+  }
+  if (m.type === "error") {
+    addBubble("bot", "⚠️ " + m.message);
+    busy = false; $("send").disabled = false;
+    setStatus("error del servidor", "err");
+  }
+}
+
+$("reconnect").onclick = () => { reconnectTries = 0; connect(); };
+$("form").onsubmit = (e) => {
+  e.preventDefault();
+  const txt = $("inp").value.trim();
+  if (!txt) return;
+  $("inp").value = "";
+  sendText(txt);
+};
+
+/* ───────────────────────── MICRÓFONO ───────────────────────── */
+function downsampleTo16k(f32, srcRate) {
+  const dst = 16000;
+  if (srcRate === dst) return f32;
+  const ratio = srcRate / dst;
+  const outLen = Math.floor(f32.length / ratio);
+  const out = new Float32Array(outLen);
+  for (let i = 0; i < outLen; i++) {
+    const pos = i * ratio, i0 = Math.floor(pos), i1 = Math.min(i0 + 1, f32.length - 1), frac = pos - i0;
+    out[i] = f32[i0] * (1 - frac) + f32[i1] * frac;
+  }
+  return out;
+}
+
+async function startMic() {
+  if (recording) return;
+  if (!wsReady) {
+    addBubble("bot", "⚠️ Todavía no estoy conectado. Reconectando…");
+    connect();
+    return;
+  }
+  if (busy) { addBubble("bot", "⏳ Espera a que termine la respuesta y vuelve a pulsar 🎤."); return; }
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  } catch (e) {
+    addBubble("bot", "⚠️ No pude acceder al micrófono: " + e.message +
+      " (si abriste la página desde otra IP, usa http://127.0.0.1:8090)");
+    return;
+  }
+  micCtx = new AudioContext();
+  const srcRate = micCtx.sampleRate;
+  micSrc = micCtx.createMediaStreamSource(micStream);
+  micProc = micCtx.createScriptProcessor(2048, 1, 1);
+  micGain = micCtx.createGain(); micGain.gain.value = 0;
+  micSrc.connect(micProc); micProc.connect(micGain); micGain.connect(micCtx.destination);
+  micProc.onaudioprocess = (e) => {
+    if (!recording) return;
+    const f32 = downsampleTo16k(e.inputBuffer.getChannelData(0), srcRate);
+    const i16 = new Int16Array(f32.length);
+    for (let i = 0; i < f32.length; i++) { const s = Math.max(-1, Math.min(1, f32[i])); i16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF; }
+    sendWS({ type: "audio", data: b64FromBytes(new Uint8Array(i16.buffer)) });
+  };
+  recording = true;
+  $("mic").classList.add("rec"); $("mic").textContent = "⏺";
+  setStatus("🎙️ grabando… pulsa de nuevo para parar", "on");
+}
+
+function stopMic() {
+  if (!recording) return;
+  recording = false;
+  try { micProc.disconnect(); micSrc.disconnect(); micGain.disconnect(); } catch (e) {}
+  if (micStream) micStream.getTracks().forEach(t => t.stop());
+  if (micCtx) micCtx.close();
+  $("mic").classList.remove("rec"); $("mic").textContent = "🎤";
+  setStatus("micrófono off · esperando respuesta…", "");
+}
+$("mic").onclick = () => {
+  pararAudio();                       // barge-in: pulsar el micrófono corta la voz
+  if (modo === "local") { localRec ? stopLocalMic() : startLocalMic(); return; }
+  if (recording) stopMic(); else startMic();
+};
+$("stop").onclick = pararAudio;
+
+/* Grabación en MODO LOCAL: chunks PCM → WAV → /api/local/turn */
+function chunksToWav(chunks, rate) {
+  let total = 0;
+  chunks.forEach((c) => { total += c.length; });
+  const buf = new ArrayBuffer(44 + total * 2);
+  const v = new DataView(buf);
+  const str = (off, s) => { for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i)); };
+  str(0, "RIFF"); v.setUint32(4, 36 + total * 2, true); str(8, "WAVE");
+  str(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  str(36, "data"); v.setUint32(40, total * 2, true);
+  let off = 44;
+  for (const c of chunks) {
+    for (let i = 0; i < c.length; i++) {
+      const s = Math.max(-1, Math.min(1, c[i]));
+      v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      off += 2;
+    }
+  }
+  return new Uint8Array(buf);
+}
+
+async function startLocalMic() {
+  if (localRec) return;
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+  } catch (e) {
+    addBubble("bot", "⚠️ No pude acceder al micrófono: " + e.message);
+    return;
+  }
+  localCtx = new AudioContext();
+  const srcRate = localCtx.sampleRate;
+  const src = localCtx.createMediaStreamSource(localStream);
+  localProc = localCtx.createScriptProcessor(2048, 1, 1);
+  localGain = localCtx.createGain(); localGain.gain.value = 0;
+  src.connect(localProc); localProc.connect(localGain); localGain.connect(localCtx.destination);
+  localChunks = [];
+  localProc.onaudioprocess = (e) => {
+    if (!localRec) return;
+    localChunks.push(downsampleTo16k(e.inputBuffer.getChannelData(0), srcRate));
+  };
+  localRec = true;
+  $("mic").classList.add("rec"); $("mic").textContent = "⏺";
+  setStatus("🎙️ grabando (modo local)… pulsa de nuevo para enviar", "on");
+}
+
+function stopLocalMic() {
+  if (!localRec) return;
+  localRec = false;
+  try { localProc.disconnect(); localGain.disconnect(); } catch (e) {}
+  if (localStream) localStream.getTracks().forEach((t) => t.stop());
+  if (localCtx) localCtx.close();
+  $("mic").classList.remove("rec"); $("mic").textContent = "🎤";
+  const wav = chunksToWav(localChunks, 16000);
+  localChunks = [];
+  if (wav.length < 2000) { addBubble("bot", "⚠️ Grabación demasiado corta."); return; }
+  const b64 = b64FromBytes(wav);
+  setStatus("enviando audio…", "");
+  localTurn({ audio: b64 });
+}
+
+/* ───────────────────────── VISIÓN / OCR ───────────────────────── */
+$("img").onclick = () => $("file").click();
+$("file").onchange = async () => {
+  const f = $("file").files[0];
+  $("file").value = "";
+  if (!f) return;
+  if (modo !== "local" && !wsReady) { addBubble("bot", "⚠️ Aún no estoy conectado; reintenta en un segundo…"); connect(); return; }
+  const b64 = b64FromBytes(new Uint8Array(await f.arrayBuffer()));
+  const up = await fetch("/api/vision/upload", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image: b64 }),
+  }).then(r => r.json()).catch(e => ({ ok: false, error: String(e) }));
+  if (!up.ok) { addBubble("bot", "⚠️ " + up.error); return; }
+  const url = up.url;
+  addBubble("user", "📷 imagen subida → " + url);
+  const pregunta = prompt("¿Qué quieres saber de la imagen? (Aceptar = descripción + texto)", "Describe la imagen y transcribe su texto.");
+  if (pregunta === null) return;
+  sendText(`${pregunta} La imagen está en: ${url}`, "📷 " + pregunta);
+};
+
+/* ───────────────────────── LIENZO DE ESCRITURA ✍️ ───────────────────────── */
+const cv = $("canvas");
+const cx = cv.getContext("2d");
+let dibujando = false, ultimo = null;
+
+function limpiarLienzo() {
+  cx.fillStyle = "#ffffff";
+  cx.fillRect(0, 0, cv.width, cv.height);
+  cx.lineWidth = 6;
+  cx.lineCap = "round";
+  cx.lineJoin = "round";
+  cx.strokeStyle = "#111111";
+}
+limpiarLienzo();
+
+function posCanvas(ev) {
+  const r = cv.getBoundingClientRect();
+  return {
+    x: (ev.clientX - r.left) * (cv.width / r.width),
+    y: (ev.clientY - r.top) * (cv.height / r.height),
+  };
+}
+cv.addEventListener("pointerdown", (ev) => {
+  ev.preventDefault();
+  cv.setPointerCapture(ev.pointerId);
+  dibujando = true;
+  ultimo = posCanvas(ev);
+});
+cv.addEventListener("pointermove", (ev) => {
+  if (!dibujando) return;
+  ev.preventDefault();
+  const p = posCanvas(ev);
+  cx.beginPath();
+  cx.moveTo(ultimo.x, ultimo.y);
+  cx.lineTo(p.x, p.y);
+  cx.stroke();
+  ultimo = p;
+});
+cv.addEventListener("pointerup", () => { dibujando = false; ultimo = null; });
+cv.addEventListener("pointercancel", () => { dibujando = false; ultimo = null; });
+
+$("draw").onclick = () => {
+  limpiarLienzo();
+  $("drawPanel").classList.add("on");
+};
+$("closeDraw").onclick = () => $("drawPanel").classList.remove("on");
+$("clearDraw").onclick = limpiarLienzo;
+
+$("sendDraw").onclick = async () => {
+  if (modo !== "local" && !wsReady) { addBubble("bot", "⚠️ Aún no estoy conectado; reintenta en un segundo…"); connect(); return; }
+  if (busy) { addBubble("bot", "⏳ Espera a que termine la respuesta anterior."); return; }
+  const dataUrl = cv.toDataURL("image/png");
+  const b64 = dataUrl.split(",")[1];
+  const up = await fetch("/api/vision/upload", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image: b64 }),
+  }).then(r => r.json()).catch(e => ({ ok: false, error: String(e) }));
+  if (!up.ok) { addBubble("bot", "⚠️ " + up.error); return; }
+  $("drawPanel").classList.remove("on");
+  sendText(`Lee lo que he escrito a mano en esta imagen y dime qué dice: ${up.url}`, "✍️ (escrito a mano)");
+};
+
+initMeta().then(() => {
+  const sel = $("mode");
+  sel.value = modo;
+  if (modo === "local") {
+    setStatus("modo local listo · Whisper + Qwen + edge-tts", "on");
+    $("send").disabled = false;
+  } else {
+    connect();
+  }
+}).catch(() => { setStatus("no pude cargar la config", "err"); connect(); });
+</script>
+</body>
+</html>
+
