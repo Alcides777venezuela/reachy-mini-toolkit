@@ -406,6 +406,36 @@ caliente**, caché, notas, tools, puente MCP y el Space publicado, y sugiere qu�
  12 comprobaciones · 1 fallos (app 7860 parada) · 18.9s
 ```
 
+## ☁️ Desplegada en la web (Space Docker de Hugging Face)
+
+**Consola online:** <https://huggingface.co/spaces/Alcides777/reachy-web-console>
+**URL de la app:** `https://alcides777-reachy-web-console.hf.space` (privado: requiere sesión HF)
+
+Se despliega como **Space Docker** (`Dockerfile`, `app_port: 7860`) con el secret
+`HF_TOKEN` (Inference Providers) configurado. El contenedor:
+- instala `fastapi/uvicorn/openai/websockets/edge-tts/piper-tts` + `ffmpeg`
+- descarga los modelos **Piper** al arrancar (ES + EN) y calienta la caché TTS
+- sirve la misma UI (voz · visión · escritura · barge-in) y los modos HF/local
+
+Prueba real desde la web (Space recién desplegado):
+
+```text
+[1] GET /              → 200 · UI servida
+[2] /api/meta          → 33 tools
+[3] /api/local/cache   → {"archivos":6,"mb":0.31,...}
+[4] turno local (SSE):
+    🛠️ hora_en · 🛠️ chiste
+    🔊 1ª frase a 1215 ms: «Son las 10:38 en Tokio.»
+    ✅ total 1327 ms · 1er audio 1215 ms
+```
+
+Verificación: `python test_web_space.py` (usa el token de tu caché).
+
+**Para compartir la URL con otras personas** hay que hacer el Space **público**
+(Settings → Change visibility). Nota: usa tu cuota de Inference con el token del secret.
+Alternativa sin Space: `cloudflared tunnel --url http://127.0.0.1:8090` (rápido, pero
+necesita tu PC encendido).
+
 ## 🚦 Error 429 del asignador de sesiones (rate limit de HF)
 
 El endpoint `pollen-robotics-reachy-mini-realtime-url.hf.space/session` limita por

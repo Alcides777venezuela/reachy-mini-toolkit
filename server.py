@@ -38,7 +38,11 @@ APP_DIR = pathlib.Path(__file__).resolve().parent
 STATIC_DIR = APP_DIR / "static"
 
 ALLOCATOR_URL = "https://pollen-robotics-reachy-mini-realtime-url.hf.space/session"
-HOST, PORT = "127.0.0.1", 8090
+HOST = os.getenv("REACHY_HOST", "127.0.0.1")
+try:
+    PORT = int(os.getenv("REACHY_PORT", "8090"))
+except ValueError:
+    PORT = 8090
 
 # ── Tool Spaces reales del app ────────────────────────────────────────────────
 MCP_TOOLS = {
@@ -338,13 +342,28 @@ def call_mcp_tool(space: str, fn: str, data: list, timeout: float = 90.0, base: 
 
 
 async def execute_tool(name: str, args: dict):
-    """Ejecuta una tool (MCP real, MCP local o propia del proyecto)."""
+    """Ejecuta una tool (MCP real, MCP local o propia del proyecto).
+
+    Si el puente local (:8091) no está disponible (p. ej. desplegado en un Space),
+    ejecuta la tool en proceso importando tools_impl.
+    """
     if name in MCP_TOOLS:
         t = MCP_TOOLS[name]
         data = [args.get(p, d) for p, d in t["params"]]
-        return await asyncio.to_thread(
-            call_mcp_tool, t.get("space", ""), t["fn"], data, 90.0, t.get("base")
-        )
+        base = t.get("base")
+        try:
+            return await asyncio.to_thread(
+                call_mcp_tool, t.get("space", ""), t["fn"], data, 90.0, base
+            )
+        except Exception:                                   # noqa: BLE001
+            if not base:
+                raise
+            import sys as _sys
+
+            _sys.path.insert(0, str(APP_DIR / "mcp"))
+            import tools_impl as _T
+
+            return await asyncio.to_thread(_T.call_tool, t["fn"], args)
     if name == "flip_coin":
         n = int(args.get("count", 1) or 1)
         caras = [random.choice(["cara", "cruz"]) for _ in range(max(1, min(n, 10)))]
@@ -695,7 +714,15 @@ async def api_vision_upload(payload: dict):
         mime = "image/webp"
     img_id = _uuid.uuid4().hex
     _VISION_IMAGES[img_id] = (raw, mime)
-    return {"ok": True, "id": img_id, "url": f"http://127.0.0.1:8090/tmpimg/{img_id}"}
+    # URL pública: en un Space de HF usamos SPACE_HOST; en local, 127.0.0.1
+    space_host = (os.getenv("SPACE_HOST") or "").strip()
+    if space_host:
+        base = f"https://{space_host}"
+    elif (os.getenv("REACHY_HOST") or "127.0.0.1") in ("0.0.0.0", ""):
+        base = f"http://127.0.0.1:{PORT}"
+    else:
+        base = f"http://{HOST}:{PORT}"
+    return {"ok": True, "id": img_id, "url": f"{base}/tmpimg/{img_id}"}
 
 
 @app.get("/tmpimg/{img_id}")
@@ -881,7 +908,8 @@ if __name__ == "__main__":
         try:
             import local_pipeline as _lp
 
-            _lp.calentar_tts()            # Piper + frases de relleno → TTS instantáneo
+            _lp.descargar_modelos_piper()   # en el Space: baja el modelo la 1ª vez
+            _lp.calentar_tts()              # Piper + frases de relleno → TTS instantáneo
         except Exception:                                   # noqa: BLE001
             pass
 

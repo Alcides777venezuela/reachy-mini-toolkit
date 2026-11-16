@@ -325,6 +325,31 @@ def calentar_tts() -> None:
     calentar_cache()
 
 
+def descargar_modelos_piper() -> None:
+    """Descarga los modelos Piper si faltan (útil en el contenedor del Space)."""
+    if piper_disponible() and PIPER_EN.is_file():
+        return
+    base_es = "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/davefx/medium"
+    base_en = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium"
+    MODELOS_DIR.mkdir(parents=True, exist_ok=True)
+    for base, nombre in ((base_es, "es_ES-davefx-medium"), (base_en, "en_US-lessac-medium")):
+        for ext in (".onnx", ".onnx.json"):
+            destino = MODELOS_DIR / f"{nombre}{ext}"
+            if destino.is_file():
+                continue
+            try:
+                req = urllib.request.Request(f"{base}/{nombre}{ext}",
+                                             headers={"User-Agent": "reachy-web-console"})
+                with urllib.request.urlopen(req, timeout=180) as r, open(destino, "wb") as f:
+                    while True:
+                        trozo = r.read(1 << 20)
+                        if not trozo:
+                            break
+                        f.write(trozo)
+            except Exception:  # noqa: BLE001
+                destino.unlink(missing_ok=True)
+
+
 # ── Caché de TTS ────────────────────────────────────────────────────────────
 CACHE_DIR = pathlib.Path(os.getenv("REACHY_TTS_CACHE") or (pathlib.Path.home() / "reachy_tts_cache"))
 CACHE_MAX = 400
