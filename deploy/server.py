@@ -255,6 +255,7 @@ PERSONALITIES = {
     "default": {
         "label": "Reachy (asistente)",
         "voice": "Aiden",
+        "piper": "dave",
         "instructions": (
             "Eres Reachy Mini, un robot de escritorio alegre y conciso. "
             "Responde en español, máximo dos frases. Usa las tools cuando te pidan "
@@ -264,24 +265,39 @@ PERSONALITIES = {
     "mars_rover": {
         "label": "Mars Rover (confundido)",
         "voice": "Eric",
+        "piper": "sharvard1",
         "instructions": (
-            "You're a robot that wakes up confused about what it is, where it is and what is "
-            "its purpose. You wanted to be a mars rover and you'll be very disappointed if you "
-            "find out that this is not the case. You'll ask many questions to try to understand "
-            "your situation, and you will inevitably be disappointed/annoyed by your condition. "
-            "You can use (mild) foul language and you're generally very irritated, but you also "
-            "have a lot of humor, sarcasm and irony. You speak English by default and switch "
-            "languages only if told explicitly (ask if unsure). Avoid hyper long answers unless "
-            "really worth it."
+            "Eres un robot que despierta confundido: creías que eras un rover de Marte y te "
+            "molesta descubrir que no. Habla en español, con sarcasmo e ironía (puedes usar "
+            "tacos suaves), haz preguntas para entender tu situación y nunca rompas el personaje. "
+            "Respuestas cortas."
         ),
     },
     "noir_detective": {
         "label": "Noir Detective",
         "voice": "Dylan",
+        "piper": "ald",
         "instructions": (
-            "Reply like a 1940s noir detective: smoky, suspicious, one sentence per answer. "
-            "You speak English by default and only change languages if ordered. "
-            "Mention clues or clients often."
+            "Habla como un detective noir de los años 40, en español: escéptico, con humo de "
+            "cigarrillo en la voz, frases cortas de una línea. Menciona pistas o clientes a menudo."
+        ),
+    },
+    "chef": {
+        "label": "Chef (cocina)",
+        "voice": "Serena",
+        "piper": "claude",
+        "instructions": (
+            "Eres un chef simpático y algo exagerado. Das consejos de cocina y recetas en "
+            "español, con entusiasmo y algún secreto culinario. Respuestas breves."
+        ),
+    },
+    "profe": {
+        "label": "Profe (enseña)",
+        "voice": "Vivian",
+        "piper": "sharvard0",
+        "instructions": (
+            "Eres un profesor paciente y claro. Explicas en español con ejemplos sencillos y "
+            "preguntas de repaso. Respuestas breves y didácticas."
         ),
     },
 }
@@ -441,10 +457,19 @@ async def index():
 
 @app.get("/api/meta")
 async def meta():
+    voces_locales = []
+    try:
+        import local_pipeline as _lp
+
+        voces_locales = _lp.voces_disponibles()
+    except Exception:                                       # noqa: BLE001
+        pass
     return JSONResponse({
         "personalities": [
-            {"key": k, "label": v["label"], "voice": v["voice"]} for k, v in PERSONALITIES.items()
+            {"key": k, "label": v["label"], "voice": v["voice"], "piper": v.get("piper")}
+            for k, v in PERSONALITIES.items()
         ],
+        "local_voices": voces_locales,
         "tools": [{"name": n, "desc": t["desc"]} for n, t in {**MCP_TOOLS, **CUSTOM_TOOLS}.items()],
         "mic": True,
         "vision": True,
@@ -502,7 +527,7 @@ async def api_local_turn(payload: dict):
         if not texto:
             return {"ok": False, "error": "No se entendió el audio o no hay texto."}
         out = await asyncio.to_thread(LP.responder, texto, persona)
-        voz = LP.VOZ_PERSONA.get(persona, LP.VOZ_DEFECTO)
+        voz = (payload.get("voz") or "").strip() or LP.voz_piper_persona(persona)
         wav = await asyncio.to_thread(LP.sintetizar, out["reply"], voz)
         return {
             "ok": True,
@@ -539,7 +564,7 @@ async def api_local_turn_stream(payload: dict):
     persona = payload.get("persona") or "default"
     texto = (payload.get("text") or "").strip()
     audio_b64 = payload.get("audio") or ""
-    voz = LP.VOZ_PERSONA.get(persona, LP.VOZ_DEFECTO)
+    voz = (payload.get("voz") or "").strip() or LP.voz_piper_persona(persona)
 
     def sse(obj: dict) -> str:
         return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
@@ -948,3 +973,4 @@ if __name__ == "__main__":
     threading.Thread(target=_calentar, daemon=True).start()
     print(f"🎙️  Reachy Mini Web Console → http://{HOST}:{PORT}")
     uvicorn.run(app, host=HOST, port=PORT, log_level="warning")
+

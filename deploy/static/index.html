@@ -143,6 +143,7 @@ function setMode(nuevo) {
   modo = nuevo;
   try { localStorage.setItem("reachy_modo", modo); } catch (e) {}
   clearTimeout(reconnectTimer);
+  poblarVoces(); syncVoice();
   if (modo === "local") {
     closedByUs = true;
     if (ws) { try { ws.close(); } catch (e) {} }
@@ -195,7 +196,11 @@ async function localTurn(payload) {
   try {
     const resp = await fetch("/api/local/turn/stream", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...payload, persona: $("personality").value || "default" }),
+      body: JSON.stringify({
+        ...payload,
+        persona: $("personality").value || "default",
+        voz: (modo === "local" ? $("voice").value : "") || "",
+      }),
     });
     if (!resp.ok || !resp.body) { addBubble("bot", "⚠️ HTTP " + resp.status); return; }
     const reader = resp.body.getReader();
@@ -272,6 +277,9 @@ function sendText(texto, mostrar) {
 }
 
 /* ── conexión con AUTO-RECONEXIÓN ────────────────────────── */
+let META = null;
+const VOCES_HF = ["Aiden","Ryan","Dylan","Eric","Ono_Anna","Serena","Sohee","Uncle_Fu","Vivian"];
+
 async function initMeta() {
   const resp = await fetch("/api/meta");
   if (resp.status === 401) {          // Space público con código de acceso
@@ -279,31 +287,46 @@ async function initMeta() {
     throw new Error("gate");
   }
   const m = await resp.json();
-  const p = $("personality"), v = $("voice");
+  META = m;
+  const p = $("personality");
+  p.innerHTML = "";
   m.personalities.forEach((x) => {
     const o = document.createElement("option");
     o.value = x.key; o.textContent = x.label;
     p.appendChild(o);
   });
-  ["Aiden","Ryan","Dylan","Eric","Ono_Anna","Serena","Sohee","Uncle_Fu","Vivian"].forEach((x) => {
-    const o = document.createElement("option");
-    o.value = x; o.textContent = "Voz: " + x;
-    v.appendChild(o);
-  });
-  p.onchange = () => { syncVoice(); connect(); };
-  v.onchange = connect;
+  poblarVoces();
+  p.onchange = () => { syncVoice(); if (modo === "hf") connect(); };
+  $("voice").onchange = () => { if (modo === "hf") connect(); };
   const modeSel = $("mode");
   modeSel.value = modo;
   modeSel.onchange = () => setMode(modeSel.value);
   syncVoice();
   $("tools").textContent = m.tools.length + " tools";
 }
+
+function poblarVoces() {
+  const v = $("voice");
+  v.innerHTML = "";
+  const lista = (modo === "local")
+    ? ((META && META.local_voices) || []).map((x) => [x.key, "Voz: " + x.label])
+    : VOCES_HF.map((x) => [x, "Voz: " + x]);
+  for (const [val, txt] of lista) {
+    const o = document.createElement("option");
+    o.value = val; o.textContent = txt;
+    v.appendChild(o);
+  }
+}
+
 function syncVoice() {
-  const p = $("personality").value;
-  fetch("/api/meta").then(r => r.json()).then(m => {
-    const per = m.personalities.find(x => x.key === p);
-    if (per) $("voice").value = per.voice;
-  });
+  if (!META) return;
+  const sel = $("personality").value;
+  const per = META.personalities.find((x) => x.key === sel);
+  if (!per) return;
+  const val = (modo === "local") ? per.piper : per.voice;
+  if (!val) return;
+  const v = $("voice");
+  if ([...v.options].some((o) => o.value === val)) v.value = val;
 }
 
 function connect() {

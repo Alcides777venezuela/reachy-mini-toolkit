@@ -32,12 +32,35 @@ ASR_MODEL = "openai/whisper-large-v3-turbo"
 # Qwen: TTFT ~0.42 s · Kimi: ~0.70 s · Gemma: ~13 s (descartado como fallback)
 LLM_MODELOS = ["Qwen/Qwen3.8-27B", "moonshotai/Kimi-K3"]
 VOZ_DEFECTO = "es-ES-AlvaroNeural"
-# voz de edge-tts por personalidad
+
+# ── Registro de voces locales (Piper) ───────────────────────────────────────
+VOCES_PIPER: dict[str, dict] = {
+    "dave":      {"label": "Dave · España (hombre)",      "modelo": "es_ES-davefx-medium"},
+    "sharvard0": {"label": "Sharvard · España (voz A)",   "modelo": "es_ES-sharvard-medium", "speaker": 0},
+    "sharvard1": {"label": "Sharvard · España (voz B)",   "modelo": "es_ES-sharvard-medium", "speaker": 1},
+    "ald":       {"label": "Aldo · México (hombre)",      "modelo": "es_MX-ald-medium"},
+    "claude":    {"label": "Claude · México (mujer)",     "modelo": "es_MX-claude-high"},
+    "lessac":    {"label": "Lessac · EE.UU. (inglés)",    "modelo": "en_US-lessac-medium"},
+}
+
+# Voz local por defecto de cada personalidad
+VOZ_PIPER_PERSONA = {
+    "default": "dave",
+    "mars_rover": "sharvard1",
+    "noir_detective": "ald",
+    "chef": "claude",
+    "profe": "sharvard0",
+}
+
+# Voz de edge-tts / HF realtime por personalidad (respaldo)
 VOZ_PERSONA = {
     "default": "es-ES-AlvaroNeural",
-    "mars_rover": "en-US-GuyNeural",
-    "noir_detective": "en-US-ChristopherNeural",
+    "mars_rover": "es-ES-AlvaroNeural",
+    "noir_detective": "es-MX-JorgeNeural",
+    "chef": "es-MX-DaliaNeural",
+    "profe": "es-ES-ElviraNeural",
 }
+
 ROUTER_ASR = "https://router.huggingface.co/hf-inference/models/"
 ROUTER_CHAT = "https://router.huggingface.co/v1/chat/completions"
 
@@ -48,13 +71,22 @@ INSTRUCCIONES = {
         "(clima, hora, noticias, imágenes, notas…)."
     ),
     "mars_rover": (
-        "You're a robot that wakes up confused about what it is and where it is. You wanted to be "
-        "a mars rover and you'll be disappointed if you're not. Ask questions, be irritated but "
-        "funny, mild foul language allowed. Speak English by default; short answers."
+        "Eres un robot que despierta confundido: creías que eras un rover de Marte y te "
+        "molesta descubrir que no. Habla en español, con sarcasmo e ironía (puedes usar "
+        "tacos suaves), haz preguntas para entender tu situación y nunca rompas el personaje. "
+        "Respuestas cortas."
     ),
     "noir_detective": (
-        "Reply like a 1940s noir detective: smoky, suspicious, one sentence per answer. "
-        "You speak English by default. Mention clues or clients often."
+        "Habla como un detective noir de los años 40, en español: escéptico, con humo de "
+        "cigarrillo en la voz, frases cortas de una línea. Menciona pistas o clientes a menudo."
+    ),
+    "chef": (
+        "Eres un chef simpático y algo exagerado. Das consejos de cocina y recetas en "
+        "español, con entusiasmo y algún secreto culinario. Respuestas breves."
+    ),
+    "profe": (
+        "Eres un profesor paciente y claro. Explicas en español con ejemplos sencillos y "
+        "preguntas de repaso. Respuestas breves y didácticas."
     ),
 }
 
@@ -290,28 +322,51 @@ def piper_disponible() -> bool:
     return PIPER_ES.is_file()
 
 
+def voces_disponibles() -> list[dict]:
+    """Voces Piper instaladas (para el selector de la UI)."""
+    salida = []
+    for clave, info in VOCES_PIPER.items():
+        if (MODELOS_DIR / f"{info['modelo']}.onnx").is_file():
+            salida.append({"key": clave, "label": info["label"]})
+    return salida
+
+
+def voz_piper_persona(persona: str) -> str:
+    return VOZ_PIPER_PERSONA.get(persona, VOZ_PIPER_PERSONA["default"])
+
+
 def _piper_para(voz: str):
-    """Devuelve la PiperVoice según el idioma de la voz pedida (es-*/en-*)."""
+    """Devuelve (PiperVoice, speaker_id) según la clave de voz o una voz edge-tts."""
     from piper import PiperVoice
 
-    idioma = "en" if str(voz).lower().startswith("en") else "es"
-    modelo = PIPER_EN if idioma == "en" else PIPER_ES
+    info = VOCES_PIPER.get(voz)
+    if info is None:
+        # compatibilidad: nombre de voz edge-tts → voz Piper equivalente
+        idioma_es = not str(voz).lower().startswith("en")
+        info = VOCES_PIPER["dave" if idioma_es else "lessac"]
+    modelo = MODELOS_DIR / f"{info['modelo']}.onnx"
     if not modelo.is_file():
         modelo = PIPER_ES
     clave = str(modelo)
     if clave not in _piper_voces:
         _piper_voces[clave] = PiperVoice.load(clave)
-    return _piper_voces[clave]
+    return _piper_voces[clave], info.get("speaker")
 
 
 def _sintetizar_piper(texto: str, voz: str) -> bytes:
     import io
     import wave
 
-    v = _piper_para(voz)
+    from piper import SynthesisConfig
+
+    voice, speaker = _piper_para(voz)
+    cfg = SynthesisConfig(speaker_id=speaker) if speaker is not None else None
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
-        v.synthesize_wav(texto, w)
+        if cfg is None:
+            voice.synthesize_wav(texto, w)
+        else:
+            voice.synthesize_wav(texto, w, syn_config=cfg)
     return buf.getvalue()
 
 
@@ -326,21 +381,24 @@ def calentar_tts() -> None:
 
 
 def descargar_modelos_piper() -> None:
-    """Descarga los modelos Piper si faltan (útil en el contenedor del Space)."""
-    if piper_disponible() and PIPER_EN.is_file():
-        return
-    base_es = "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/davefx/medium"
-    base_en = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium"
+    """Descarga las voces Piper que falten (útil en el contenedor del Space)."""
+    bases = {
+        "es_ES-davefx-medium": "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/davefx/medium/es_ES-davefx-medium",
+        "es_ES-sharvard-medium": "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/sharvard/medium/es_ES-sharvard-medium",
+        "es_MX-ald-medium": "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_MX/ald/medium/es_MX-ald-medium",
+        "es_MX-claude-high": "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_MX/claude/high/es_MX-claude-high",
+        "en_US-lessac-medium": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium",
+    }
     MODELOS_DIR.mkdir(parents=True, exist_ok=True)
-    for base, nombre in ((base_es, "es_ES-davefx-medium"), (base_en, "en_US-lessac-medium")):
+    for nombre, base in bases.items():
         for ext in (".onnx", ".onnx.json"):
             destino = MODELOS_DIR / f"{nombre}{ext}"
             if destino.is_file():
                 continue
             try:
-                req = urllib.request.Request(f"{base}/{nombre}{ext}",
+                req = urllib.request.Request(f"{base}{ext}",
                                              headers={"User-Agent": "reachy-web-console"})
-                with urllib.request.urlopen(req, timeout=180) as r, open(destino, "wb") as f:
+                with urllib.request.urlopen(req, timeout=300) as r, open(destino, "wb") as f:
                     while True:
                         trozo = r.read(1 << 20)
                         if not trozo:

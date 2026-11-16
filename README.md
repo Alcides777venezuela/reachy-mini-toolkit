@@ -406,6 +406,34 @@ caliente**, caché, notas, tools, puente MCP y el Space publicado, y sugiere qu�
  12 comprobaciones · 1 fallos (app 7860 parada) · 18.9s
 ```
 
+## 🎭 Personalidades y voces (todas en español)
+
+| Personalidad | Carácter | Voz local (Piper) |
+|---|---|---|
+| **default** | asistente alegre y conciso | Dave · España (hombre) |
+| **mars_rover** | robot confundido que creía ser rover de Marte, sarcástico | Sharvard B · España |
+| **noir_detective** | detective noir de los 40, frases de una línea | Aldo · México (hombre) |
+| **chef** | chef exagerado, consejos de cocina | Claude · México (mujer) |
+| **profe** | profesor paciente y claro | Sharvard A · España |
+
+**6 voces disponibles** en modo local (selector en la UI):
+`dave` (ES hombre) · `sharvard0` / `sharvard1` (ES, 2 hablantes) · `ald` (MX hombre) ·
+`claude` (MX mujer, calidad *high*) · `lessac` (inglés).
+
+- El selector de **Voz** cambia de opciones según el modo: voces **Piper** en local y
+  voces del backend (Aiden, Eric, Dylan…) en HF realtime.
+- Elegir personalidad fija su voz por defecto; puedes cambiarla a mano.
+
+Prueba real (`python test_personas.py`):
+
+```text
+default         324696B  ¡Hola! Soy Reachy Mini, un robot de escritorio alegre y conciso…
+mars_rover      906124B  Supuestamente era un rover de Marte. Pero aquí no hay polvo rojo…
+noir_detective  787164B  Un viejo que lee el mundo como un expediente mal cerrado.
+chef           1066716B  ¡Ah, mi querido cocinillas! 🍳 Aquí va un consejo que vale oro…
+profe           687704B  La fotosíntesis es el proceso en el que las plantas usan la luz del sol…
+```
+
 ## ☁️ Desplegada en la web (Space Docker de Hugging Face)
 
 **Consola online (pública):** <https://huggingface.co/spaces/Alcides777/reachy-web-console>
