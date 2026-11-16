@@ -143,36 +143,86 @@ function setMode(nuevo) {
   }
 }
 
-/* ── TURNO EN MODO LOCAL ──────────────────────────────────── */
+/* ── TURNO EN MODO LOCAL (streaming SSE + audio por frases) ── */
+let colaAudio = [], sonandoAudio = false;
+function encolarAudio(b64) {
+  if (!b64) return;
+  colaAudio.push(b64);
+  if (!sonandoAudio) reproducirSiguiente();
+}
+function reproducirSiguiente() {
+  if (!colaAudio.length) { sonandoAudio = false; return; }
+  sonandoAudio = true;
+  const a = new Audio("data:audio/wav;base64," + colaAudio.shift());
+  a.onended = reproducirSiguiente;
+  a.play().catch(() => reproducirSiguiente());
+}
+
 async function localTurn(payload) {
   if (busy) { addBubble("bot", "⏳ Espera a que termine la respuesta anterior."); return; }
   busy = true; $("send").disabled = true;
+  colaAudio = []; sonandoAudio = false;
   setStatus(payload.audio ? "🎧 transcribiendo…" : "pensando (modo local)…", "");
+  let burbuja = null, texto = "", primero = null;
   try {
-    const r = await fetch("/api/local/turn", {
+    const resp = await fetch("/api/local/turn/stream", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...payload, persona: $("personality").value || "default" }),
-    }).then(x => x.json()).catch(e => ({ ok: false, error: String(e) }));
-    if (!r.ok) {
-      addBubble("bot", "⚠️ " + r.error);
-      setStatus("error en modo local", "err");
-      return;
-    }
-    if (r.transcript) addBubble("user", "🎤 " + r.transcript);
-    (r.tools || []).forEach((n) => {
-      const el = document.createElement("div");
-      el.className = "tool";
-      el.innerHTML = `<b>🛠️ ${n}</b>`;
-      chat.appendChild(el);
     });
-    const b = addBubble("bot", r.reply);
-    const meta = document.createElement("span");
-    meta.className = "meta";
-    meta.textContent = ` · ${(r.tools || []).length} tool(s) · ${(r.latency_ms / 1000).toFixed(2)} s`;
-    b.appendChild(meta);
-    if (r.audio) { const a = new Audio("data:audio/wav;base64," + r.audio); a.play().catch(() => {}); }
-    $("lat").textContent = `Modo local · ${(r.latency_ms / 1000).toFixed(2)} s`;
-    setStatus("modo local listo · Whisper + Qwen + edge-tts", "on");
+    if (!resp.ok || !resp.body) { addBubble("bot", "⚠️ HTTP " + resp.status); return; }
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf("\n\n")) >= 0) {
+        const bloque = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        for (const linea of bloque.split("\n")) {
+          if (!linea.startsWith("data: ")) continue;
+          let m; try { m = JSON.parse(linea.slice(6)); } catch (e) { continue; }
+
+          if (m.type === "transcript") { addBubble("user", "🎤 " + m.text); }
+          else if (m.type === "audio" && m.audio) {
+            encolarAudio(m.audio);                        // frase de relleno (mientras corren las tools)
+            if (m.filler) { $("lat").textContent = "«" + m.filler + "»"; }
+          }
+          else if (m.type === "tool") {
+            const el = document.createElement("div");
+            el.className = "tool";
+            el.innerHTML = `<b>🛠️ ${m.name}</b>`;
+            chat.appendChild(el); scrollDown();
+          } else if (m.type === "sentence") {
+            if (!burbuja) burbuja = addBubble("bot", "");
+            texto += m.text + " ";
+            burbuja.textContent = texto.trim();
+            if (primero === null && m.t_ms != null) {
+              primero = m.t_ms;
+              $("lat").textContent = `modo local · primer audio ${(primero / 1000).toFixed(2)} s`;
+            }
+            encolarAudio(m.audio);
+            scrollDown();
+          } else if (m.type === "done") {
+            if (burbuja) {
+              const meta = document.createElement("span");
+              meta.className = "meta";
+              meta.textContent = ` · ${(m.tools || []).length} tool(s) · ${(m.latency_ms / 1000).toFixed(2)} s`
+                + (m.first_audio_ms ? ` · 1er audio ${(m.first_audio_ms / 1000).toFixed(2)} s` : "");
+              burbuja.appendChild(meta);
+            }
+            $("lat").textContent = `Modo local · total ${(m.latency_ms / 1000).toFixed(2)} s`
+              + (m.first_audio_ms ? ` · 1er audio ${(m.first_audio_ms / 1000).toFixed(2)} s` : "");
+            setStatus("modo local listo · Whisper + Qwen + edge-tts", "on");
+          } else if (m.type === "error") {
+            addBubble("bot", "⚠️ " + m.error);
+            setStatus("error en modo local", "err");
+          }
+        }
+      }
+    }
   } catch (e) {
     addBubble("bot", "⚠️ " + e);
     setStatus("error en modo local", "err");
@@ -244,7 +294,8 @@ function connect() {
   ws.onmessage = (e) => { try { onMsg(JSON.parse(e.data)); } catch (err) { console.error(err); } };
   ws.onclose = () => {
     wsReady = false; busy = false;
-    $("send").disabled = true;
+    $("send").disabled = false;
+    if (modo === "local") { setStatus("modo local listo · Whisper + Qwen + edge-tts", "on"); return; }
     if (closedByUs) { setStatus("desconectado", "err"); return; }
     setStatus("desconectado — reconectando…", "err");
     scheduleReconnect();

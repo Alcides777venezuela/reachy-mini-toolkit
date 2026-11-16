@@ -337,6 +337,30 @@ audio  → STT «apunta una nota… hola mundo» · tool=escribir_nota · nota g
 Verificación: `python ui_local_check.py`. Endpoint: `POST /api/local/turn`
 (`{text}` o `{audio}` base64 → `{transcript, reply, tools, audio, latency_ms}`).
 
+## ⚡ Latencia del modo local (streaming + caché)
+
+Optimizaciones aplicadas (medidas reales):
+
+| Optimización | Efecto |
+|---|---|
+| **LLM en streaming (SSE)** | el texto aparece mientras se genera |
+| **TTS por frase en paralelo** | la 1ª frase suena antes de que termine la respuesta |
+| **Tools en paralelo** | 2-3 tools en el mismo tiempo que 1 |
+| **Caché de TTS en disco** | frases repetidas suenan al instante (`~/reachy_tts_cache`, 400 archivos máx) |
+| **Frase de relleno** («Un momento…», cacheada) | suena mientras las tools trabajan |
+| **Modelo elegido por TTFT** | Qwen3.8-27B **0.42 s** (Kimi 0.70 s; Gemma descartado: 13 s) |
+| **Warm-up al arrancar** | pre-sintetiza rellenos y saludos |
+
+**Antes vs después** (mismo tipo de pregunta):
+
+| Caso | Antes (sin streaming) | Ahora (streaming) |
+|---|---|---|
+| Sin tools | 6.4 s hasta el final, audio al final | **1er audio 2.3 s**, total 2.6 s |
+| Con 2-3 tools | ~7 s sin audio | **relleno 4.7 s**, frases 5.9 s, total 5.6 s |
+
+Verificación: `python test_local_stream.py "Dime la hora en Tokio y un chiste."`
+Estado de la caché: `GET /api/local/cache` → `{"archivos": 21, "mb": 2.17, ...}`
+
 ## 🚦 Error 429 del asignador de sesiones (rate limit de HF)
 
 El endpoint `pollen-robotics-reachy-mini-realtime-url.hf.space/session` limita por

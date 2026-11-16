@@ -22,6 +22,13 @@ import random
 import sys
 import wave
 
+# Consola/redirecciones de Windows (cp1252) no soportan emojis → forzar UTF-8
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:                                       # noqa: BLE001
+        pass
+
 import httpx
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
@@ -464,6 +471,163 @@ async def api_local_turn(payload: dict):
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
+@app.get("/api/local/cache")
+async def api_local_cache():
+    import local_pipeline as LP
+
+    return LP.cache_estado()
+
+
+@app.post("/api/local/turn/stream")
+async def api_local_turn_stream(payload: dict):
+    """Modo local con STREAMING: frases + TTS por frase (SSE)."""
+    import base64 as _b64
+    import re as _re
+    import threading as _threading
+    import time as _t
+
+    from fastapi.responses import StreamingResponse
+
+    import local_pipeline as LP
+
+    payload = payload or {}
+    persona = payload.get("persona") or "default"
+    texto = (payload.get("text") or "").strip()
+    audio_b64 = payload.get("audio") or ""
+    voz = LP.VOZ_PERSONA.get(persona, LP.VOZ_DEFECTO)
+
+    def sse(obj: dict) -> str:
+        return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
+
+    async def gen():
+        t0 = _t.time()
+        primero_ms = None
+        texto_local = texto
+        if audio_b64:
+            try:
+                raw = _b64.b64decode(audio_b64)
+                transcript = await asyncio.to_thread(LP.transcribir, raw, "es")
+                yield sse({"type": "transcript", "text": transcript})
+                texto_local = (transcript or "").strip()
+            except Exception as e:                          # noqa: BLE001
+                yield sse({"type": "error", "error": f"ASR: {e}"})
+                return
+        if not texto_local:
+            yield sse({"type": "error", "error": "No se entendió el audio o no hay texto."})
+            return
+
+        loop = asyncio.get_running_loop()
+        cola: asyncio.Queue = asyncio.Queue()
+
+        def worker():
+            try:
+                for ev in LP.responder_stream(texto_local, persona):
+                    loop.call_soon_threadsafe(cola.put_nowait, ev)
+            except Exception as e:                          # noqa: BLE001
+                loop.call_soon_threadsafe(cola.put_nowait, {"type": "error", "error": str(e)})
+            finally:
+                loop.call_soon_threadsafe(cola.put_nowait, {"type": "__end__"})
+
+        _threading.Thread(target=worker, daemon=True).start()
+
+        buffer = ""
+        partes: list[str] = []
+        tools: list[str] = []
+        relleno_enviado = False
+        tareas: list[tuple[str, asyncio.Task]] = []   # TTS en paralelo, se emiten en orden
+
+        async def drenar(en_orden: bool = False):
+            """Emite los audios ya sintetizados (en orden); si en_orden, espera al primero."""
+            nonlocal primero_ms
+            while tareas:
+                frase, tarea = tareas[0]
+                if not tarea.done():
+                    if not en_orden:
+                        break
+                    await asyncio.shield(tarea)
+                tareas.pop(0)
+                try:
+                    audio = tarea.result()
+                except Exception:                            # noqa: BLE001
+                    audio = b""
+                if primero_ms is None:
+                    primero_ms = int((_t.time() - t0) * 1000)
+                yield sse({
+                    "type": "sentence",
+                    "text": frase,
+                    "audio": _b64.b64encode(audio).decode() if audio else None,
+                    "t_ms": int((_t.time() - t0) * 1000),
+                })
+
+        while True:
+            ev = await cola.get()
+            if ev.get("type") == "__end__":
+                break
+            if ev.get("type") == "error":
+                yield sse({"type": "error", "error": ev.get("error")})
+                return
+            if ev.get("type") == "tool":
+                tools.append(ev.get("name", ""))
+                if primero_ms is None and not relleno_enviado:
+                    # aún no ha sonado nada: decimos una frase corta (está en caché)
+                    relleno_enviado = True
+                    try:
+                        audio = await asyncio.to_thread(
+                            LP.sintetizar, LP.frase_relleno(persona), voz)
+                    except Exception:                        # noqa: BLE001
+                        audio = b""
+                    if audio:
+                        yield sse({"type": "audio", "audio": _b64.b64encode(audio).decode(),
+                                   "filler": LP.frase_relleno(persona)})
+                yield sse({"type": "tool", "name": ev.get("name", "")})
+                continue
+            if ev.get("type") == "texto":
+                frag = ev.get("text", "")
+                partes.append(frag)
+                buffer += frag
+                while True:
+                    corte = -1
+                    for k, ch in enumerate(buffer):
+                        if ch in ".!?…" and (k + 1 == len(buffer) or buffer[k + 1].isspace()):
+                            corte = k
+                            break
+                    if corte == -1:
+                        break
+                    frase = buffer[:corte + 1].strip()
+                    buffer = buffer[corte + 1:].lstrip()
+                    if len(frase) >= 2:
+                        # lanza la síntesis en paralelo y va emitiendo las terminadas
+                        tareas.append((frase, asyncio.create_task(
+                            asyncio.to_thread(LP.sintetizar, frase, voz))))
+                        async for chunk in drenar():
+                            yield chunk
+                continue
+            if ev.get("type") == "final":
+                if buffer.strip():
+                    frase = buffer.strip()
+                    buffer = ""
+                    tareas.append((frase, asyncio.create_task(
+                        asyncio.to_thread(LP.sintetizar, frase, voz))))
+                async for chunk in drenar(en_orden=True):
+                    yield chunk
+                yield sse({
+                    "type": "done",
+                    "reply": "".join(partes).strip(),
+                    "tools": tools,
+                    "latency_ms": int((_t.time() - t0) * 1000),
+                    "first_audio_ms": primero_ms,
+                })
+                return
+
+        async for chunk in drenar(en_orden=True):
+            yield chunk
+        yield sse({"type": "done", "reply": "".join(partes).strip(), "tools": tools,
+                   "latency_ms": int((_t.time() - t0) * 1000), "first_audio_ms": primero_ms})
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 # ── Imágenes temporales para que el LLM pueda usarlas con las tools ─────────
 _VISION_IMAGES: dict[str, tuple[bytes, str]] = {}
 
@@ -709,7 +873,18 @@ async def ws_chat(ws: WebSocket, personality: str = "default", voice: str | None
 
 
 if __name__ == "__main__":
+    import threading
+
     import uvicorn
 
+    def _calentar():
+        try:
+            import local_pipeline as _lp
+
+            _lp.calentar_cache()          # frases de relleno y saludos → TTS instantáneo
+        except Exception:                                   # noqa: BLE001
+            pass
+
+    threading.Thread(target=_calentar, daemon=True).start()
     print(f"🎙️  Reachy Mini Web Console → http://{HOST}:{PORT}")
     uvicorn.run(app, host=HOST, port=PORT, log_level="warning")
