@@ -406,6 +406,45 @@ caliente**, caché, notas, tools, puente MCP y el Space publicado, y sugiere qu�
  12 comprobaciones · 1 fallos (app 7860 parada) · 18.9s
 ```
 
+## 🧠 Memoria (contexto que no se pierde)
+
+El modo local **recordaba nada entre turnos**; ahora tiene dos niveles:
+
+| Nivel | Qué guarda | Dónde | Cuánto dura |
+|---|---|---|---|
+| **Corto plazo** (conversación) | últimos 12 mensajes del hilo | `~/reachy_memoria/conv_<sid>.json` | sobrevive reinicios; se limpia con 🧠 |
+| **Largo plazo** (persistente) | datos que el robot decide apuntar (`recordar`/`olvidar`) | `~/reachy_memoria/largo_plazo.json` | hasta que los borres |
+
+Cómo funciona:
+- La UI genera un **`sid`** (UUID) y lo guarda en `localStorage` → el mismo hilo siempre.
+- El historial se inyecta en cada llamada al LLM (memoria de conversación).
+- Los datos persistentes se añaden al *system prompt* («Datos que recuerdas del usuario»).
+- El LLM tiene tools **`recordar(dato)`** y **`olvidar(texto)`**.
+- Botón **🧠** en la cabecera: muestra el estado y borra toda la memoria.
+- API: `GET /api/memoria?sid=…`, `DELETE /api/memoria?sid=…`, `POST /api/memoria/recordar`.
+
+Prueba real (`python test_memoria.py`):
+
+```text
+[1] «Hola, me llamo Alcides y me gusta el café con leche. Guárdalo.»
+    → ¡Hola, Alcides! Ya guardé que te gusta el café con leche.
+[2] «¿Cómo me llamo y qué me gusta?»
+    → Te llamas Alcides y te gusta el café con leche.          ✅
+[3] historial: 4 mensajes · datos: ['El usuario se llama Alcides…']
+[4] tras borrar → «No tengo guardado tu nombre en mi memoria.»  ✅
+```
+
+**Y sobrevive al reinicio del servidor** (historial en disco):
+
+```text
+antes:   «¡Hola, Valentina! Ya he guardado tu nombre y que eres de Valencia.»
+(reinicio del servidor)
+después: «Te llamas Valentina y eres de Valencia. ¡Lo tengo guardado en mi memoria!» ✅
+```
+
+En el Space desplegado también funciona (memoria en disco del contenedor; se reinicia al
+reiniciarse el Space).
+
 ## 🎭 Personalidades y voces (todas en español, coherentes)
 
 | Personalidad | Carácter | Voz local (Piper) |

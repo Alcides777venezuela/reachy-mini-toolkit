@@ -552,7 +552,8 @@ async def api_local_turn(payload: dict):
             texto = (transcript or "").strip()
         if not texto:
             return {"ok": False, "error": "No se entendió el audio o no hay texto."}
-        out = await asyncio.to_thread(LP.responder, texto, persona)
+        sid = str(payload.get("sid") or "default")[:40]
+        out = await asyncio.to_thread(LP.responder, texto, persona, 4, sid)
         voz = (payload.get("voz") or "").strip() or LP.voz_piper_persona(persona)
         wav = await asyncio.to_thread(LP.sintetizar, out["reply"], voz)
         return {
@@ -572,6 +573,33 @@ async def api_local_cache():
     import local_pipeline as LP
 
     return LP.cache_estado()
+
+
+# ── MEMORIA (conversación + datos persistentes) ─────────────────────────────
+@app.get("/api/memoria")
+async def api_memoria(sid: str = "default"):
+    import local_pipeline as LP
+
+    return {
+        "sid": sid,
+        "historial": LP.cargar_historial(sid),
+        "resumen": LP.memoria_resumen(),
+    }
+
+
+@app.delete("/api/memoria")
+async def api_memoria_borrar(sid: str = "default"):
+    import local_pipeline as LP
+
+    return {"ok": True, "result": LP.borrar_memoria(sid)}
+
+
+@app.post("/api/memoria/recordar")
+async def api_memoria_recordar(payload: dict):
+    import local_pipeline as LP
+
+    dato = str((payload or {}).get("dato") or "")
+    return {"ok": True, "result": LP.memoria_recordar(dato)}
 
 
 @app.post("/api/local/turn/stream")
@@ -614,10 +642,11 @@ async def api_local_turn_stream(payload: dict):
 
         loop = asyncio.get_running_loop()
         cola: asyncio.Queue = asyncio.Queue()
+        sid = str(payload.get("sid") or "default")[:40]
 
         def worker():
             try:
-                for ev in LP.responder_stream(texto_local, persona):
+                for ev in LP.responder_stream(texto_local, persona, 4, sid):
                     loop.call_soon_threadsafe(cola.put_nowait, ev)
             except Exception as e:                          # noqa: BLE001
                 loop.call_soon_threadsafe(cola.put_nowait, {"type": "error", "error": str(e)})

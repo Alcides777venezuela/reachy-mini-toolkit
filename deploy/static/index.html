@@ -59,6 +59,7 @@
     <option value="local">💻 Local (Whisper + Qwen + edge-tts)</option>
   </select>
   <button class="btn" id="reconnect">Reconectar</button>
+  <button class="btn" id="memBtn" title="Ver / borrar la memoria">🧠</button>
 </header>
 
 <div id="chat">
@@ -112,6 +113,12 @@ let reconnectTimer = null, closedByUs = false, reconnectTries = 0;
 let cooldownUntil = 0;   // cuando HF nos limita (429) esperamos sin martillear
 // El modo por defecto es LOCAL: no usa el asignador de sesiones de HF (sin 429).
 let modo = (localStorage.getItem("reachy_modo") || "local");
+// Identificador de conversación: hace que la MEMORIA sea persistente entre visitas
+let SID = (localStorage.getItem("reachy_sid") || "").trim();
+if (!SID) {
+  SID = (crypto.randomUUID ? crypto.randomUUID() : "s" + Date.now());
+  try { localStorage.setItem("reachy_sid", SID); } catch (e) {}
+}
 let localChunks = [], localStream = null, localCtx = null, localProc = null, localGain = null, localRec = false;
 let micStream = null, micCtx = null, micProc = null, micSrc = null, micGain = null, recording = false;
 const $ = (id) => document.getElementById(id);
@@ -198,6 +205,7 @@ async function localTurn(payload) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...payload,
+        sid: SID,
         persona: $("personality").value || "default",
         voz: (modo === "local" ? $("voice").value : "") || "",
       }),
@@ -665,6 +673,18 @@ $("gateBtn").onclick = async () => {
   }).then(x => x.json()).catch(() => ({ ok: false }));
   if (r.ok) { $("gate").style.display = "none"; location.reload(); }
   else { $("gateErr").textContent = r.error || "Código incorrecto"; }
+};
+
+$("memBtn").onclick = async () => {
+  const info = await fetch("/api/memoria?sid=" + encodeURIComponent(SID))
+    .then(r => r.json()).catch(() => null);
+  const n = info ? (info.historial || []).length : 0;
+  const datos = info && info.resumen ? (info.resumen.datos_largo_plazo || []).length : 0;
+  const detalle = datos ? "\nDatos: " + info.resumen.datos_largo_plazo.slice(-6).join(" · ") : "";
+  if (!confirm(`Memoria de esta conversación: ${n} mensajes · ${datos} datos persistentes.${detalle}\n\n¿Borrar TODO?`)) return;
+  const r = await fetch("/api/memoria?sid=" + encodeURIComponent(SID), { method: "DELETE" })
+    .then(x => x.json()).catch(() => ({ ok: false }));
+  addBubble("bot", r.ok ? "🧠 " + r.result : "⚠️ no pude borrar la memoria");
 };
 
 initMeta().then(() => {

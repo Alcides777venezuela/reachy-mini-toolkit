@@ -24,6 +24,10 @@ import tempfile
 import urllib.error
 import urllib.request
 
+from datetime import datetime
+
+from datetime import datetime
+
 MCP_DIR = pathlib.Path(__file__).resolve().parent / "mcp"
 sys.path.insert(0, str(MCP_DIR))
 import tools_impl as T  # noqa: E402
@@ -113,7 +117,136 @@ INSTRUCCIONES = {
 CUSTOM = {
     "flip_coin": lambda a: {"resultado": [random.choice(["cara", "cruz"]) for _ in range(max(1, min(int(a.get("count", 1) or 1), 10)))]},
     "roll_dice": lambda a: {"sides": int(a.get("sides", 6) or 6), "resultado": random.randint(1, max(2, min(int(a.get("sides", 6) or 6), 100)))},
+    "recordar": lambda a: memoria_recordar(a.get("dato", "")),
+    "olvidar": lambda a: memoria_olvidar(a.get("dato", "")),
 }
+
+# ── MEMORIA: conversación (corto plazo) + datos persistentes (largo plazo) ──
+MEM_DIR = pathlib.Path(os.getenv("REACHY_MEMORIA") or (pathlib.Path.home() / "reachy_memoria"))
+HISTORIAL_MAX = 12        # mensajes que se envían al modelo
+LARGO_PLAZO_MAX = 40      # datos persistidos
+
+
+def _archivo_historial(sid: str) -> pathlib.Path:
+    limpio = re.sub(r"[^A-Za-z0-9_-]", "", str(sid or ""))[:40] or "default"
+    return MEM_DIR / f"conv_{limpio}.json"
+
+
+def cargar_historial(sid: str) -> list[dict]:
+    try:
+        ruta = _archivo_historial(sid)
+        if ruta.is_file():
+            datos = json.loads(ruta.read_text(encoding="utf-8"))
+            if isinstance(datos, list):
+                return datos[-HISTORIAL_MAX:]
+    except Exception:  # noqa: BLE001
+        pass
+    return []
+
+
+def guardar_historial(sid: str, mensajes: list[dict]) -> None:
+    try:
+        MEM_DIR.mkdir(parents=True, exist_ok=True)
+        _archivo_historial(sid).write_text(
+            json.dumps(mensajes[-HISTORIAL_MAX:], ensure_ascii=False, indent=1),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+
+
+def _archivo_largo() -> pathlib.Path:
+    return MEM_DIR / "largo_plazo.json"
+
+
+def cargar_largo_plazo() -> list[dict]:
+    try:
+        ruta = _archivo_largo()
+        if ruta.is_file():
+            datos = json.loads(ruta.read_text(encoding="utf-8"))
+            if isinstance(datos, list):
+                return datos
+    except Exception:  # noqa: BLE001
+        pass
+    return []
+
+
+def _guardar_largo_plazo(datos: list[dict]) -> None:
+    try:
+        MEM_DIR.mkdir(parents=True, exist_ok=True)
+        _archivo_largo().write_text(
+            json.dumps(datos[-LARGO_PLAZO_MAX:], ensure_ascii=False, indent=1),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+
+
+def memoria_recordar(dato: str) -> str:
+    """Guarda un dato en la memoria persistente (nickname, gustos, hechos…)."""
+    dato = str(dato or "").strip()
+    if not dato:
+        return "Necesito el dato a recordar."
+    datos = cargar_largo_plazo()
+    if any(d.get("dato", "").lower() == dato.lower() for d in datos):
+        return f"Ya lo tenía apuntado: {dato}"
+    datos.append({"dato": dato, "ts": datetime.now().strftime("%Y-%m-%d %H:%M")})
+    _guardar_largo_plazo(datos)
+    return f"Recordado: {dato}"
+
+
+def memoria_olvidar(dato: str) -> str:
+    dato = str(dato or "").strip().lower()
+    datos = cargar_largo_plazo()
+    antes = len(datos)
+    datos = [d for d in datos if dato not in d.get("dato", "").lower()]
+    if len(datos) == antes:
+        return f"No tenía nada apuntado sobre «{dato}»."
+    _guardar_largo_plazo(datos)
+    return f"Olvidado lo relacionado con «{dato}» ({antes - len(datos)} datos)."
+
+
+def memoria_resumen() -> dict:
+    """Estado de la memoria (para la UI)."""
+    try:
+        convs = [p.stem for p in MEM_DIR.glob("conv_*.json")] if MEM_DIR.is_dir() else []
+    except OSError:
+        convs = []
+    return {
+        "datos_largo_plazo": [d.get("dato") for d in cargar_largo_plazo()],
+        "conversaciones": len(convs),
+        "dir": str(MEM_DIR),
+    }
+
+
+def borrar_memoria(sid: str | None = None) -> str:
+    """Borra la conversación (si se da sid) y/o los datos de largo plazo."""
+    borrados = 0
+    try:
+        if sid:
+            ruta = _archivo_historial(sid)
+            if ruta.is_file():
+                ruta.unlink()
+                borrados += 1
+        else:
+            for p in MEM_DIR.glob("conv_*.json"):
+                p.unlink()
+                borrados += 1
+        largo = _archivo_largo()
+        if largo.is_file():
+            largo.unlink()
+    except OSError:
+        pass
+    return f"Memoria borrada ({borrados} conversación(es) + datos persistentes)."
+
+
+def _system_prompt(persona: str) -> str:
+    base = INSTRUCCIONES.get(persona, INSTRUCCIONES["default"])
+    datos = cargar_largo_plazo()
+    if datos:
+        lista = "\n".join(f"- {d.get('dato')}" for d in datos[-12:])
+        base += f"\n\nDatos que recuerdas del usuario (memoria persistente):\n{lista}"
+    return base
 
 # Frase corta que se dice mientras las tools trabajan (latencia percibida ↓)
 RELLENO = {
@@ -204,6 +337,18 @@ def _tools_spec() -> list[dict]:
     tools.append({"type": "function", "function": {
         "name": "roll_dice", "description": "Tira un dado de N caras.",
         "parameters": {"type": "object", "properties": {"sides": {"type": "integer", "default": 6}}}}})
+    tools.append({"type": "function", "function": {
+        "name": "recordar",
+        "description": "Guarda un dato del usuario en la memoria PERSISTENTE (nombre, gustos, "
+                       "preferencias, hechos importantes). Úsalo cuando te cuenten algo que debas "
+                       "recordar en conversaciones futuras.",
+        "parameters": {"type": "object", "properties": {"dato": {"type": "string"}},
+                       "required": ["dato"]}}})
+    tools.append({"type": "function", "function": {
+        "name": "olvidar",
+        "description": "Borra de la memoria persistente los datos que contengan ese texto.",
+        "parameters": {"type": "object", "properties": {"dato": {"type": "string"}},
+                       "required": ["dato"]}}})
     return tools
 
 
@@ -239,22 +384,30 @@ def _chat(messages: list[dict], tools: list[dict] | None = None) -> dict:
     raise RuntimeError(f"Ningún modelo LLM respondió. Último: {ultimo}")
 
 
-def responder(texto: str, persona: str = "default", max_rondas: int = 4) -> dict:
-    """Texto → (respuesta, tools usadas) con bucle de function calling."""
+def responder(texto: str, persona: str = "default", max_rondas: int = 4, sid: str = "default") -> dict:
+    """Texto → (respuesta, tools usadas) con bucle de function calling y MEMORIA."""
     texto = (texto or "").strip()
     if not texto:
         raise ValueError("texto vacío")
+    historial = cargar_historial(sid)
     messages = [
-        {"role": "system", "content": INSTRUCCIONES.get(persona, INSTRUCCIONES["default"])},
+        {"role": "system", "content": _system_prompt(persona)},
+        *historial,
         {"role": "user", "content": texto},
     ]
     usadas: list[str] = []
+    respuesta = ""
     for _ in range(max_rondas):
         d = _chat(messages, tools=_tools_spec())
         msg = (d.get("choices") or [{}])[0].get("message") or {}
         tcs = msg.get("tool_calls") or []
         if not tcs:
-            return {"reply": (msg.get("content") or "").strip(), "tools": usadas}
+            respuesta = (msg.get("content") or "").strip()
+            guardar_historial(sid, historial + [
+                {"role": "user", "content": texto},
+                {"role": "assistant", "content": respuesta},
+            ])
+            return {"reply": respuesta, "tools": usadas}
         messages.append({
             "role": "assistant",
             "content": msg.get("content") or "",
@@ -520,13 +673,18 @@ def dividir_frases(texto: str, minimo: int = 12) -> list[str]:
     return out
 
 
-def responder_stream(texto: str, persona: str = "default", max_rondas: int = 4):
-    """Generador: emite {"type":"texto"} por fragmento, {"type":"tool"} y {"type":"final"}."""
+def responder_stream(texto: str, persona: str = "default", max_rondas: int = 4, sid: str = "default"):
+    """Generador: emite {"type":"texto"} por fragmento, {"type":"tool"} y {"type":"final"}.
+
+    Mantiene MEMORIA: carga el historial previo de la conversación (sid) y lo guarda al final.
+    """
     texto = (texto or "").strip()
     if not texto:
         raise ValueError("texto vacío")
+    historial = cargar_historial(sid)
     messages = [
-        {"role": "system", "content": INSTRUCCIONES.get(persona, INSTRUCCIONES["default"])},
+        {"role": "system", "content": _system_prompt(persona)},
+        *historial,
         {"role": "user", "content": texto},
     ]
     usadas: list[str] = []
@@ -589,7 +747,12 @@ def responder_stream(texto: str, persona: str = "default", max_rondas: int = 4):
                         "content": str(out)[:4000],
                     })
             continue
+        guardar_historial(sid, historial + [
+            {"role": "user", "content": texto},
+            {"role": "assistant", "content": respuesta},
+        ])
         yield {"type": "final", "reply": respuesta, "tools": usadas}
         return
     yield {"type": "final", "reply": "", "tools": usadas}
+
 
