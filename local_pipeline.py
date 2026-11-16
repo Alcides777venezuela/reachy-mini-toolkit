@@ -246,17 +246,29 @@ async def _tts_async(texto: str, voz: str) -> bytes:
 
 
 def sintetizar(texto: str, voz: str = VOZ_DEFECTO) -> bytes:
-    """Texto → WAV 16 kHz mono con edge-tts (local, gratis), con CACHÉ en disco."""
+    """Texto → WAV mono, con CACHÉ en disco.
+
+    Motor: **Piper** local si el modelo está disponible (~0.6 s/frase, sin red),
+    si no, **edge-tts** (~1.3 s/frase, requiere red). Seleccionable con REACHY_TTS.
+    """
     texto = (texto or "").strip()
     if not texto:
         return b""
-    ruta = _cache_path(texto, voz)
+    motor = (os.getenv("REACHY_TTS") or "piper").strip().lower()
+    ruta = _cache_path(texto, f"{motor}|{voz}")
     if ruta.is_file():
         try:
             return ruta.read_bytes()
         except OSError:
             pass
-    data = asyncio.run(_tts_async(texto, voz))
+    data = b""
+    if motor == "piper":
+        try:
+            data = _sintetizar_piper(texto, voz)
+        except Exception:  # noqa: BLE001
+            data = b""
+    if not data:
+        data = asyncio.run(_tts_async(texto, voz))
     if data:
         try:
             CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -265,6 +277,52 @@ def sintetizar(texto: str, voz: str = VOZ_DEFECTO) -> bytes:
         except OSError:
             pass
     return data
+
+
+# ── TTS local con Piper (rápido en CPU, sin red) ────────────────────────────
+MODELOS_DIR = pathlib.Path(os.getenv("REACHY_MODELS") or (pathlib.Path.home() / "reachy_models"))
+PIPER_ES = MODELOS_DIR / "es_ES-davefx-medium.onnx"
+PIPER_EN = MODELOS_DIR / "en_US-lessac-medium.onnx"
+_piper_voces: dict[str, object] = {}
+
+
+def piper_disponible() -> bool:
+    return PIPER_ES.is_file()
+
+
+def _piper_para(voz: str):
+    """Devuelve la PiperVoice según el idioma de la voz pedida (es-*/en-*)."""
+    from piper import PiperVoice
+
+    idioma = "en" if str(voz).lower().startswith("en") else "es"
+    modelo = PIPER_EN if idioma == "en" else PIPER_ES
+    if not modelo.is_file():
+        modelo = PIPER_ES
+    clave = str(modelo)
+    if clave not in _piper_voces:
+        _piper_voces[clave] = PiperVoice.load(clave)
+    return _piper_voces[clave]
+
+
+def _sintetizar_piper(texto: str, voz: str) -> bytes:
+    import io
+    import wave
+
+    v = _piper_para(voz)
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        v.synthesize_wav(texto, w)
+    return buf.getvalue()
+
+
+def calentar_tts() -> None:
+    """Carga el modelo Piper y pre-sintetiza (en caché) rellenos y saludos."""
+    try:
+        if piper_disponible():
+            _sintetizar_piper("calentando", "es-ES-AlvaroNeural")
+    except Exception:  # noqa: BLE001
+        pass
+    calentar_cache()
 
 
 # ── Caché de TTS ────────────────────────────────────────────────────────────

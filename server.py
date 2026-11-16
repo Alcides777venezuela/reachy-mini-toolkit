@@ -881,7 +881,7 @@ if __name__ == "__main__":
         try:
             import local_pipeline as _lp
 
-            _lp.calentar_cache()          # frases de relleno y saludos → TTS instantáneo
+            _lp.calentar_tts()            # Piper + frases de relleno → TTS instantáneo
         except Exception:                                   # noqa: BLE001
             pass
 
