@@ -74,8 +74,46 @@ ROUTER_CHAT = "https://router.huggingface.co/v1/chat/completions"
 
 _COHERENCIA = (
     " Sé coherente y factual: no inventes datos, cifras ni nombres. Si no sabes algo, "
-    "dilo claramente. Responde en español, breve y ordenado."
+    "dilo claramente. Responde en español, breve y ordenado. "
+    "Escribe SOLO lo que se diría en voz alta: sin negritas, asteriscos, emojis, "
+    "paréntesis, corchetes, barras, listas con guiones ni símbolos raros."
 )
+
+# ── Limpieza del texto antes de hablar (quita muletillas y ruido) ───────────
+_RE_EMOJI = re.compile(
+    "[" "\U0001F300-\U0001FAFF" "\U00002600-\U000027BF" "\U0001F000-\U0001F2FF"
+    "\U00002B00-\U00002BFF" "\uFE0F\u200D" "]"
+)
+
+
+def limpiar_para_voz(texto: str) -> str:
+    """Quita de un texto lo que suena mal al leerlo en voz alta.
+
+    Elimina: markdown (** * _ ` # >), listas (- •), paréntesis y su contenido,
+    corchetes, barras, ¡¿? y emojis. Deja frases limpias con puntuación normal.
+    """
+    t = str(texto or "")
+    # unidades → se leen bien en voz alta
+    t = re.sub(r"(\d+)\s*°\s*C\b", r"\1 grados centígrados", t)
+    t = re.sub(r"(\d+)\s*°\s*F\b", r"\1 grados Fahrenheit", t)
+    t = re.sub(r"(\d+)\s*%", r"\1 por ciento", t)
+    t = re.sub(r"(\d+)\s*km\s*/\s*h", r"\1 kilómetros por hora", t)
+    t = re.sub(r"(\d+)\s*USD", r"\1 dólares", t)
+    t = re.sub(r"(\d+)\s*EUR", r"\1 euros", t)
+    t = re.sub(r"\*\*|__|`{1,3}|~~", "", t)          # markdown
+    t = t.replace("*", "").replace("#", "").replace(">", "")
+    t = re.sub(r"\s*[-•·]\s+", " ", t)                # viñetas
+    t = re.sub(r"\[[^\]]*\]", "", t)                  # [acotaciones]
+    t = re.sub(r"\([^)]*\)", "", t)                   # (acotaciones)
+    t = t.replace("/", " ").replace("|", " ")
+    t = t.replace("¿", "").replace("¡", "")
+    t = t.replace("?", ".").replace("!", ".")
+    t = _RE_EMOJI.sub(" ", t)
+    t = re.sub(r"\s+([.,;:])", r"\1", t)              # espacio antes de puntuación
+    t = re.sub(r"[ \t]{2,}", " ", t)
+    t = re.sub(r"\n{2,}", "\n", t)
+    t = re.sub(r"^[\s.,;:]+", "", t)                  # basura al inicio
+    return t.strip()
 
 INSTRUCCIONES = {
     "default": (

@@ -406,6 +406,42 @@ caliente**, caché, notas, tools, puente MCP y el Space publicado, y sugiere qu�
  12 comprobaciones · 1 fallos (app 7860 parada) · 18.9s
 ```
 
+## 🗣️ Voz limpia (sin muletillas ni símbolos raros)
+
+La voz leía cosas raras: `**negritas**`, `(paréntesis)`, `barras /`, `¿?`, emojis. Ahora hay
+**dos capas**:
+
+1. **Regla en el prompt** (todas las personalidades):
+   *«Escribe SOLO lo que se diría en voz alta: sin negritas, asteriscos, emojis,
+   paréntesis, corchetes, barras, listas con guiones ni símbolos raros.»*
+2. **Limpiador `limpiar_para_voz()`** antes de sintetizar:
+   - quita markdown (`**`, `_`, `` ` ``, `#`, `>`), viñetas (`-`, `•`)
+   - elimina paréntesis/corchetes y su contenido
+   - quita `/`, `|`, `¿`, `¡`; cambia `?` y `!` por `.`
+   - borra emojis
+   - **normaliza unidades**: `24 °C` → «24 grados centígrados» · `49%` → «49 por ciento» ·
+     `8 km/h` → «8 kilómetros por hora» · `100 USD` → «100 dólares» · `90 EUR` → «90 euros»
+
+**Antes / después:**
+
+```text
+antes:  «**Clima en Caracas:**\n- Ahora: niebla, 18.3 °C\n- Hoy: máx 30.0 °C / mín 16.8 °C»
+después: «Clima en Caracas: Ahora: niebla, 18.3 grados centígrados Hoy: máx 30.0 grados…»
+
+antes:  «En Tokio son las 09:18 (JST) del 16 de noviembre de 2026.»
+después: «En Tokio son las 09:18 del 16 de noviembre de 2026.»
+
+antes:  «¡Hola! ¿Qué tal? 🍕 Me gusta la pizza / pasta.»
+después: «Hola. Qué tal. Me gusta la pizza pasta.»
+```
+
+Prueba real en la web desplegada:
+```text
+[viajero] ✅ limpio → «En Caracas hay niebla con 17,3 grados, máxima de 30 y mínima de 16,8,
+        humedad del 99 por ciento y 49 por ciento de probabilidad de lluvia.
+        Cien dólares equivalen a 90,48 euros.»
+```
+
 ## 🧠 Memoria (contexto que no se pierde)
 
 El modo local **recordaba nada entre turnos**; ahora tiene dos niveles:

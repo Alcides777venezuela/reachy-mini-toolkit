@@ -554,12 +554,13 @@ async def api_local_turn(payload: dict):
             return {"ok": False, "error": "No se entendió el audio o no hay texto."}
         sid = str(payload.get("sid") or "default")[:40]
         out = await asyncio.to_thread(LP.responder, texto, persona, 4, sid)
+        limpio = LP.limpiar_para_voz(out["reply"])
         voz = (payload.get("voz") or "").strip() or LP.voz_piper_persona(persona)
-        wav = await asyncio.to_thread(LP.sintetizar, out["reply"], voz)
+        wav = await asyncio.to_thread(LP.sintetizar, limpio, voz)
         return {
             "ok": True,
             "transcript": transcript,
-            "reply": out["reply"],
+            "reply": limpio,
             "tools": out["tools"],
             "audio": _b64.b64encode(wav).decode() if wav else None,
             "latency_ms": int((_t.time() - t0) * 1000),
@@ -718,7 +719,7 @@ async def api_local_turn_stream(payload: dict):
                             break
                     if corte == -1:
                         break
-                    frase = buffer[:corte + 1].strip()
+                    frase = LP.limpiar_para_voz(buffer[:corte + 1])
                     buffer = buffer[corte + 1:].lstrip()
                     if len(frase) >= 2:
                         # lanza la síntesis en paralelo y va emitiendo las terminadas
@@ -729,7 +730,7 @@ async def api_local_turn_stream(payload: dict):
                 continue
             if ev.get("type") == "final":
                 if buffer.strip():
-                    frase = buffer.strip()
+                    frase = LP.limpiar_para_voz(buffer.strip())
                     buffer = ""
                     tareas.append((frase, asyncio.create_task(
                         asyncio.to_thread(LP.sintetizar, frase, voz))))
@@ -1028,4 +1029,6 @@ if __name__ == "__main__":
     threading.Thread(target=_calentar, daemon=True).start()
     print(f"🎙️  Reachy Mini Web Console → http://{HOST}:{PORT}")
     uvicorn.run(app, host=HOST, port=PORT, log_level="warning")
+
+
 
