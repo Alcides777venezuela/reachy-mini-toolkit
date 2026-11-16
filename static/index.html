@@ -72,6 +72,7 @@
     <input id="inp" placeholder="Escribe tu mensaje o usa el micrófono…" />
     <button type="button" class="icon" id="draw" title="Escribir a mano (el robot lo lee)">✍️</button>
     <button type="button" class="icon" id="mic" title="Pulsa para hablar, pulsa otra vez para parar">🎤</button>
+    <button type="button" class="icon" id="stop" title="Detener la voz (Esc)" style="display:none">⏹</button>
     <button id="send" type="submit">Enviar</button>
   </form>
   <input type="file" id="file" accept="image/*" style="display:none">
@@ -144,19 +145,32 @@ function setMode(nuevo) {
 }
 
 /* ── TURNO EN MODO LOCAL (streaming SSE + audio por frases) ── */
-let colaAudio = [], sonandoAudio = false;
+let colaAudio = [], sonandoAudio = false, audioActual = null;
 function encolarAudio(b64) {
   if (!b64) return;
   colaAudio.push(b64);
   if (!sonandoAudio) reproducirSiguiente();
 }
 function reproducirSiguiente() {
-  if (!colaAudio.length) { sonandoAudio = false; return; }
+  if (!colaAudio.length) { sonandoAudio = false; actualizarBotonParar(); return; }
   sonandoAudio = true;
-  const a = new Audio("data:audio/wav;base64," + colaAudio.shift());
-  a.onended = reproducirSiguiente;
-  a.play().catch(() => reproducirSiguiente());
+  actualizarBotonParar();
+  audioActual = new Audio("data:audio/wav;base64," + colaAudio.shift());
+  audioActual.onended = reproducirSiguiente;
+  audioActual.play().catch(() => reproducirSiguiente());
 }
+/* Barge-in: corta la voz (botón ⏹, tecla Esc o al pulsar el micrófono) */
+function pararAudio() {
+  colaAudio = [];
+  sonandoAudio = false;
+  if (audioActual) { try { audioActual.pause(); } catch (e) {} audioActual = null; }
+  actualizarBotonParar();
+  addBubble("bot", "⏹ (interrumpido)");
+}
+function actualizarBotonParar() {
+  const b = $("stop"); if (b) b.style.display = sonandoAudio ? "inline-block" : "none";
+}
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") pararAudio(); });
 
 async function localTurn(payload) {
   if (busy) { addBubble("bot", "⏳ Espera a que termine la respuesta anterior."); return; }
@@ -367,7 +381,12 @@ function onMsg(m) {
       current.appendChild(meta);
     }
     current = null;
-    if (m.audio) { const a = new Audio("data:audio/wav;base64," + m.audio); a.play().catch(() => {}); }
+    if (m.audio) {
+      audioActual = new Audio("data:audio/wav;base64," + m.audio);
+      sonandoAudio = true; actualizarBotonParar();
+      audioActual.onended = () => { sonandoAudio = false; audioActual = null; actualizarBotonParar(); };
+      audioActual.play().catch(() => { sonandoAudio = false; actualizarBotonParar(); });
+    }
     $("lat").textContent = m.latency_s ? `Latencia de audio: ${m.latency_s}s` : "";
     busy = false; $("send").disabled = false;
     scrollDown();
@@ -446,9 +465,11 @@ function stopMic() {
   setStatus("micrófono off · esperando respuesta…", "");
 }
 $("mic").onclick = () => {
+  pararAudio();                       // barge-in: pulsar el micrófono corta la voz
   if (modo === "local") { localRec ? stopLocalMic() : startLocalMic(); return; }
   if (recording) stopMic(); else startMic();
 };
+$("stop").onclick = pararAudio;
 
 /* Grabación en MODO LOCAL: chunks PCM → WAV → /api/local/turn */
 function chunksToWav(chunks, rate) {

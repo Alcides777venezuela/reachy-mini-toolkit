@@ -370,6 +370,42 @@ Optimizaciones aplicadas (medidas reales en esta máquina, Intel N100):
 Modelos en `~/reachy_models/` (≈240 MB). Volver a edge-tts: `set REACHY_TTS=edge`.
 Verificación: `python test_local_stream.py "Dime la hora en Tokio y un chiste."`
 
+## ⏹ Interrumpir la voz (barge-in)
+
+Mientras el robot habla puedes cortarlo de tres formas:
+
+| Acción | Efecto |
+|---|---|
+| Pulsar **⏹** (aparece solo mientras suena) | corta el audio y vacía la cola |
+| Tecla **Esc** | lo mismo |
+| Pulsar **🎤** | corta la voz y empieza a grabarte |
+
+Se muestra la burbuja «⏹ (interrumpido)». Verificado: `python ui_stop_check.py`
+
+```text
+[1] botón ⏹ existe: True      [2] oculto al inicio: none
+[3] visible mientras suena: block   [4] oculto tras parar: none
+[5] burbuja: ⏹ (interrumpido)  [6] tras Escape: none
+```
+
+## 🩺 Doctor — chequeo de salud
+
+```bash
+python doctor.py
+```
+
+Comprueba servicios (8090/8091/8000/7860), token HF, LLM del router, **TTS Piper en
+caliente**, caché, notas, tools, puente MCP y el Space publicado, y sugiere qué arrancar:
+
+```text
+ ✅ Consola web       puerto 8090      ✅ Token HF Alcides777 (pro=True)
+ ✅ LLM (HF router)   Qwen3.8-27B · 0.45s
+ ✅ TTS Piper (local)  51244B en 1.11s (caliente)
+ ✅ Caché TTS  94 archivos · 14.86 MB   ✅ Tools del MCP 26 tools
+ ✅ Space HF (MCP) 26 tools · despierto
+ 12 comprobaciones · 1 fallos (app 7860 parada) · 18.9s
+```
+
 ## 🚦 Error 429 del asignador de sesiones (rate limit de HF)
 
 El endpoint `pollen-robotics-reachy-mini-realtime-url.hf.space/session` limita por
