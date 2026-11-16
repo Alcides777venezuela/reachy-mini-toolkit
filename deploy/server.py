@@ -400,6 +400,32 @@ class TurnState:
 
 app = FastAPI(title="Reachy Mini Web Console")
 
+# ── Código de acceso opcional (para desplegar público sin quedar abierto) ────
+ACCESS_CODE = (os.getenv("REACHY_ACCESS_CODE") or "").strip()
+
+
+@app.middleware("http")
+async def _gate(request, call_next):
+    if not ACCESS_CODE:
+        return await call_next(request)
+    ruta = request.url.path
+    if ruta in ("/", "/api/login", "/favicon.ico") or ruta.startswith("/tmpimg/") or ruta.startswith("/static"):
+        return await call_next(request)
+    codigo = request.headers.get("x-access-code") or request.cookies.get("reachy_code") or ""
+    if codigo != ACCESS_CODE:
+        return JSONResponse({"ok": False, "error": "código de acceso requerido"}, status_code=401)
+    return await call_next(request)
+
+
+@app.post("/api/login")
+async def api_login(payload: dict):
+    codigo = str((payload or {}).get("code") or "").strip()
+    if not ACCESS_CODE or codigo == ACCESS_CODE:
+        resp = JSONResponse({"ok": True})
+        resp.set_cookie("reachy_code", codigo, httponly=True, samesite="lax", max_age=86400 * 30)
+        return resp
+    return JSONResponse({"ok": False, "error": "código incorrecto"}, status_code=401)
+
 
 @app.get("/")
 async def index():
@@ -799,6 +825,12 @@ async def consume_events(conn, ws: WebSocket, state: TurnState):
 @app.websocket("/ws/chat")
 async def ws_chat(ws: WebSocket, personality: str = "default", voice: str | None = None):
     import time as _t
+
+    if ACCESS_CODE and (ws.cookies.get("reachy_code") or "") != ACCESS_CODE:
+        await ws.accept()
+        await ws.send_json({"type": "error", "message": "código de acceso requerido"})
+        await ws.close()
+        return
 
     await ws.accept()
     persona = PERSONALITIES.get(personality, PERSONALITIES["default"])

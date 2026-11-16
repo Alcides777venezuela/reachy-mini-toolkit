@@ -94,11 +94,24 @@
   </div>
 </div>
 
+<div id="gate" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:60;align-items:center;justify-content:center">
+  <div style="background:#121923;border:1px solid #1e2a38;border-radius:16px;padding:22px;width:min(90vw,360px);box-shadow:0 20px 60px rgba(0,0,0,.6)">
+    <h3 style="margin:0 0 8px;color:#e6edf3;font-size:16px">🔒 Consola protegida</h3>
+    <p style="color:#8b9bb0;font-size:13px;margin:0 0 12px">Introduce el código de acceso.</p>
+    <input id="gateCode" type="password" placeholder="código"
+           style="width:100%;padding:11px;border-radius:10px;border:1px solid #1e2a38;background:#0e141c;color:#e6edf3;font:inherit">
+    <button id="gateBtn"
+            style="margin-top:12px;width:100%;padding:11px;border-radius:10px;border:0;background:#4cc2ff;color:#04121c;font-weight:700;cursor:pointer">Entrar</button>
+    <div id="gateErr" style="color:#ff6b6b;font-size:12px;margin-top:8px"></div>
+  </div>
+</div>
+
 <script>
 let ws = null, wsReady = false, busy = false, current = null;
 let reconnectTimer = null, closedByUs = false, reconnectTries = 0;
 let cooldownUntil = 0;   // cuando HF nos limita (429) esperamos sin martillear
-let modo = "hf";         // "hf" = realtime de Hugging Face · "local" = Whisper+Qwen+edge-tts
+// El modo por defecto es LOCAL: no usa el asignador de sesiones de HF (sin 429).
+let modo = (localStorage.getItem("reachy_modo") || "local");
 let localChunks = [], localStream = null, localCtx = null, localProc = null, localGain = null, localRec = false;
 let micStream = null, micCtx = null, micProc = null, micSrc = null, micGain = null, recording = false;
 const $ = (id) => document.getElementById(id);
@@ -128,6 +141,7 @@ function sendWS(obj) {
 /* ── MODO ─────────────────────────────────────────────────── */
 function setMode(nuevo) {
   modo = nuevo;
+  try { localStorage.setItem("reachy_modo", modo); } catch (e) {}
   clearTimeout(reconnectTimer);
   if (modo === "local") {
     closedByUs = true;
@@ -259,7 +273,12 @@ function sendText(texto, mostrar) {
 
 /* ── conexión con AUTO-RECONEXIÓN ────────────────────────── */
 async function initMeta() {
-  const m = await (await fetch("/api/meta")).json();
+  const resp = await fetch("/api/meta");
+  if (resp.status === 401) {          // Space público con código de acceso
+    $("gate").style.display = "flex";
+    throw new Error("gate");
+  }
+  const m = await resp.json();
   const p = $("personality"), v = $("voice");
   m.personalities.forEach((x) => {
     const o = document.createElement("option");
@@ -614,7 +633,27 @@ $("sendDraw").onclick = async () => {
   sendText(`Lee lo que he escrito a mano en esta imagen y dime qué dice: ${up.url}`, "✍️ (escrito a mano)");
 };
 
-initMeta().then(connect).catch(() => { setStatus("no pude cargar la config", "err"); connect(); });
+$("gateBtn").onclick = async () => {
+  const code = $("gateCode").value.trim();
+  if (!code) return;
+  const r = await fetch("/api/login", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  }).then(x => x.json()).catch(() => ({ ok: false }));
+  if (r.ok) { $("gate").style.display = "none"; location.reload(); }
+  else { $("gateErr").textContent = r.error || "Código incorrecto"; }
+};
+
+initMeta().then(() => {
+  const sel = $("mode");
+  sel.value = modo;
+  if (modo === "local") {
+    setStatus("modo local listo · Whisper + Qwen + edge-tts", "on");
+    $("send").disabled = false;
+  } else {
+    connect();
+  }
+}).catch(() => { setStatus("no pude cargar la config", "err"); connect(); });
 </script>
 </body>
 </html>
